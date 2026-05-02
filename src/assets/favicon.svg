@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <!-- Koyu arka plan gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d3748"/>
+      <stop offset="100%" style="stop-color:#1a202c"/>
+    </linearGradient>
+    <!-- Mavi halka gradient -->
+    <linearGradient id="blueRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a6fa5"/>
+      <stop offset="100%" style="stop-color:#2c4a6e"/>
+    </linearGradient>
+    <!-- Turuncu gradient -->
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f6ad55"/>
+      <stop offset="100%" style="stop-color:#dd6b20"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Dış mavi halka -->
+  <circle cx="50" cy="50" r="48" fill="url(#blueRing)"/>
+  
+  <!-- İç koyu daire -->
+  <circle cx="50" cy="50" r="38" fill="url(#bgGrad)"/>
+  
+  <!-- Progress bar (turuncu çizgiler - daire etrafında) -->
+  <g fill="url(#orangeGrad)">
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(0 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(12 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(24 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(36 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(48 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(60 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(72 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(84 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(96 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(108 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(120 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(132 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(144 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(156 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(168 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(180 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(192 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(204 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(216 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(228 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(240 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(252 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(264 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(276 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(288 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(300 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(312 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(324 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(336 50 50)"/>
+    <rect x="49" y="14" width="2" height="6" rx="1" transform="rotate(348 50 50)"/>
+  </g>
+  
+  <!-- Ana dişli çark -->
+  <g fill="url(#orangeGrad)" transform="translate(50, 48)">
+    <!-- Dişli gövdesi -->
+    <circle cx="0" cy="0" r="12" fill="url(#orangeGrad)"/>
+    <circle cx="0" cy="0" r="5" fill="url(#bgGrad)"/>
+    <!-- Dişler -->
+    <rect x="-2" y="-16" width="4" height="6" rx="1"/>
+    <rect x="-2" y="10" width="4" height="6" rx="1"/>
+    <rect x="-16" y="-2" width="6" height="4" rx="1"/>
+    <rect x="10" y="-2" width="6" height="4" rx="1"/>
+    <rect x="7" y="-13" width="4" height="6" rx="1" transform="rotate(45 9 -10)"/>
+    <rect x="-13" y="7" width="4" height="6" rx="1" transform="rotate(45 -11 10)"/>
+    <rect x="-13" y="-13" width="4" height="6" rx="1" transform="rotate(-45 -11 -10)"/>
+    <rect x="7" y="7" width="4" height="6" rx="1" transform="rotate(-45 9 10)"/>
+  </g>
+  
+  <!-- Yukarı ok -->
+  <g fill="url(#orangeGrad)">
+    <polygon points="50,26 58,40 54,40 54,55 46,55 46,40 42,40"/>
+  </g>
+  
+  <!-- Sol alt küçük dişli -->
+  <g fill="url(#orangeGrad)" transform="translate(32, 62)">
+    <circle cx="0" cy="0" r="6" fill="url(#orangeGrad)"/>
+    <circle cx="0" cy="0" r="2.5" fill="url(#bgGrad)"/>
+    <rect x="-1" y="-9" width="2" height="4" rx="0.5"/>
+    <rect x="-1" y="5" width="2" height="4" rx="0.5"/>
+    <rect x="-9" y="-1" width="4" height="2" rx="0.5"/>
+    <rect x="5" y="-1" width="4" height="2" rx="0.5"/>
+  </g>
+  
+  <!-- Sağ alt kronometre -->
+  <g fill="url(#orangeGrad)" transform="translate(68, 65)">
+    <circle cx="0" cy="0" r="7" fill="none" stroke="url(#orangeGrad)" stroke-width="2"/>
+    <line x1="0" y1="0" x2="0" y2="-4" stroke="url(#orangeGrad)" stroke-width="1.5" stroke-linecap="round"/>
+    <rect x="-1" y="-11" width="2" height="3" rx="0.5"/>
+    <circle cx="4" cy="-9" r="1.5" fill="url(#orangeGrad)"/>
+  </g>
+</svg>

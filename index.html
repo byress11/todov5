@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' https://www.gstatic.com https://cdnjs.cloudflare.com https://invidious.snopyta.org https://piped.video; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://invidious.snopyta.org https://piped.video; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src * data: blob:; media-src * blob: data:; connect-src * blob: data:; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://invidious.snopyta.org https://piped.video https://piped.kavin.rocks https://inv.riverside.rocks https://*.firebaseapp.com https://*.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self';">
+    <title>TaskMaster Pro - Görev ve Pomodoro Yöneticisi</title>
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="src/assets/favicon.svg">
+    <link rel="shortcut icon" href="src/assets/favicon.svg">
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#6366f1">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TaskMaster Pro">
+    <meta name="description"
+        content="Görev yönetimi, Pomodoro zamanlayıcı ve hatırlatma özelliklerine sahip profesyonel üretkenlik uygulaması">
+    <link rel="manifest" href="manifest.json">
+
+    <link rel="stylesheet" href="src/styles/style.css">
+    <!-- xterm CSS lazy: terminal modulu acildiginda inject edilir -->
+    <!-- Font Awesome for professional icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDK (defer: HTML parsing'i bloklamaz) -->
+    <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script defer src="src/firebase-config.js"></script>
+</head>
+
+<body>
+    <!-- Sync Status Indicator -->
+    <div class="sync-indicator" id="syncIndicator">
+        <i class="fas fa-sync-alt"></i>
+        <span id="syncStatus">Senkronize ediliyor...</span>
+    </div>
+
+    <!-- Login Modal -->
+    <div class="login-modal" id="loginModal">
+        <div class="login-content">
+            <h2><i class="fas fa-cloud"></i> Bulut Senkronizasyon</h2>
+            <p>Verilerinizi tüm cihazlarınızda senkronize edin</p>
+
+            <div class="login-options">
+                <button class="login-btn anonymous" id="anonymousLoginBtn">
+                    <i class="fas fa-user-secret"></i>
+                    <span>Anonim Giriş</span>
+                </button>
+
+                <div class="divider">veya</div>
+
+                <div class="email-login">
+                    <input type="email" id="emailInput" placeholder="E-posta adresiniz" class="login-input"
+                        autocomplete="email">
+                    <input type="password" id="passwordInput" placeholder="Şifre (min. 6 karakter)" class="login-input"
+                        autocomplete="current-password">
+                    <button class="login-btn email" id="emailLoginBtn">
+                        <i class="fas fa-envelope"></i>
+                        <span>E-posta ile Giriş/Kayıt</span>
+                    </button>
+                    <p class="login-hint">
+                        <i class="fas fa-info-circle"></i>
+                        İlk kez giriş yapıyorsanız otomatik hesap oluşturulur
+                    </p>
+                </div>
+            </div>
+
+            <button class="skip-btn" id="skipLoginBtn">
+                <i class="fas fa-times"></i> Şimdilik Atla (Sadece Yerel)
+            </button>
+        </div>
+    </div>
+    <div class="widget-container widget-locked" id="widgetContainer">
+        <!-- Resize Handles (hidden when locked) -->
+        <div class="resize-handle resize-top" data-direction="top" class="hidden"></div>
+        <div class="resize-handle resize-right" data-direction="right" class="hidden"></div>
+        <div class="resize-handle resize-bottom" data-direction="bottom" class="hidden"></div>
+        <div class="resize-handle resize-left" data-direction="left" class="hidden"></div>
+        <div class="resize-handle resize-top-left" data-direction="top-left" class="hidden"></div>
+        <div class="resize-handle resize-top-right" data-direction="top-right" class="hidden"></div>
+        <div class="resize-handle resize-bottom-left" data-direction="bottom-left" class="hidden"></div>
+        <div class="resize-handle resize-bottom-right" data-direction="bottom-right" class="hidden"></div>
+
+        <!-- Header -->
+        <div class="widget-header" id="widgetHeader">
+            <div class="widget-title">
+                <i class="fas fa-tasks widget-icon"></i>
+                <span class="title-text">TaskMaster Pro</span>
+            </div>
+            <div class="widget-controls">
+                <button class="control-btn" id="userAccountBtn" title="Hesap" style="display: none;">
+                    <i class="fas fa-user"></i>
+                </button>
+                <button class="control-btn" id="settingsBtn" title="Ayarlar">
+                    <i class="fas fa-cog"></i>
+                </button>
+                <button class="control-btn active" id="lockBtn" title="Kilidi Aç">
+                    <i class="fas fa-lock"></i>
+                </button>
+                <button class="control-btn" id="themeBtn" title="Tema Değiştir">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <button class="control-btn" id="minimizeBtn" title="Küçült">
+                    <i class="fas fa-minus"></i>
+                </button>
+                <button class="control-btn close-btn" id="closeBtn" title="Kapat">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="widget-nav">
+            <button class="nav-btn active" data-tab="todo" title="Olay Haritası">
+                <i class="fas fa-diagram-project"></i>
+            </button>
+            <button class="nav-btn" data-tab="pomodoro" title="Pomodoro">
+                <i class="fas fa-clock"></i>
+            </button>
+            <button class="nav-btn" data-tab="files" title="Dosyalar">
+                <i class="fas fa-folder"></i>
+            </button>
+            <button class="nav-btn" data-tab="notes" title="Notlar">
+                <i class="fas fa-note-sticky"></i>
+            </button>
+            <button class="nav-btn" data-tab="terminal" title="Terminal">
+                <i class="fas fa-terminal"></i>
+            </button>
+            <button class="nav-btn" data-tab="browser" title="Tarayici">
+                <i class="fas fa-globe"></i>
+            </button>
+        </div>
+
+        <!-- Olay Haritasi (Case Map) Tab -->
+        <div class="tab-content active" id="todoTab">
+            <div class="casemap-root">
+                <header class="casemap-palette" id="casemapPalette">
+                    <span class="casemap-palette-title"><i class="fas fa-shapes"></i> Hibritler</span>
+                    <div class="casemap-palette-list" id="casemapPaletteList"></div>
+                    <button class="casemap-palette-edit" id="casemapEditTemplatesBtn" title="Şablonları düzenle">
+                        <i class="fas fa-sliders"></i>
+                    </button>
+                </header>
+                <nav class="casemap-toolbar">
+                    <button class="cm-tool-btn" data-action="fit" title="Sığdır (H)"><i class="fas fa-expand"></i></button>
+                    <button class="cm-tool-btn" data-action="zoom-in" title="Yakınlaştır"><i class="fas fa-plus"></i></button>
+                    <button class="cm-tool-btn" data-action="zoom-out" title="Uzaklaştır"><i class="fas fa-minus"></i></button>
+                    <span class="cm-zoom-indicator" id="casemapZoomIndicator">100%</span>
+                    <span class="cm-tool-sep"></span>
+                    <button class="cm-tool-btn" data-action="undo" title="Geri Al (Ctrl+Z)"><i class="fas fa-rotate-left"></i></button>
+                    <button class="cm-tool-btn" data-action="redo" title="Yinele (Ctrl+Y)"><i class="fas fa-rotate-right"></i></button>
+                    <span class="cm-tool-sep"></span>
+                    <input type="text" id="casemapSearch" class="cm-search" placeholder="Ara…">
+                    <button class="cm-tool-btn cm-open-window-btn" data-action="open-casemap-window" title="Hibrit haritayı ayrı pencerede aç">
+                        <i class="fas fa-up-right-from-square"></i>
+                    </button>
+                    <span class="cm-tool-sep"></span>
+                    <label class="cm-bright" title="Arka plan ışığı">
+                        <i class="fas fa-sun"></i>
+                        <input type="range" id="casemapBrightness" min="0" max="100" value="0">
+                    </label>
+                    <span class="cm-tool-spacer"></span>
+                    <button class="cm-tool-btn" data-action="export" title="Dışa Aktar"><i class="fas fa-download"></i></button>
+                    <button class="cm-tool-btn" data-action="import" title="İçe Aktar"><i class="fas fa-upload"></i></button>
+                </nav>
+                <div class="casemap-stage">
+                    <canvas id="casemapCanvas"></canvas>
+                    <aside class="casemap-inspector" id="casemapInspector" hidden>
+                        <div class="cm-insp-header">
+                            <span class="cm-insp-title">Düğüm</span>
+                            <button class="cm-insp-close" id="casemapInspectorClose" title="Kapat"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div class="cm-insp-body">
+                            <label class="cm-insp-label">Başlık</label>
+                            <input type="text" id="cmInspTitle" class="cm-insp-input">
+                            <label class="cm-insp-label">Durum</label>
+                            <div class="cm-insp-status" id="cmInspStatus">
+                                <button class="cm-status-btn" data-status="todo">Yapılacak</button>
+                                <button class="cm-status-btn" data-status="doing">Devam</button>
+                                <button class="cm-status-btn" data-status="done">Bitti</button>
+                                <button class="cm-status-btn" data-status="blocked">Bloke</button>
+                            </div>
+                            <label class="cm-insp-label">Renk Şeması</label>
+                            <select id="cmInspHybrid" class="cm-insp-input"></select>
+                            <label class="cm-insp-label">Not</label>
+                            <textarea id="cmInspNote" class="cm-insp-textarea" rows="3" placeholder="Dedektif notu…"></textarea>
+                            <div class="cm-insp-actions">
+                                <button class="cm-insp-action danger" id="cmInspDelete"><i class="fas fa-trash"></i> Sil</button>
+                                <button class="cm-insp-action" id="cmInspDuplicate"><i class="fas fa-copy"></i> Kopyala</button>
+                            </div>
+                        </div>
+                    </aside>
+                    <div class="casemap-context-menu" id="casemapContextMenu" hidden></div>
+                    <div class="casemap-empty-hint" id="casemapEmptyHint">
+                        <i class="fas fa-diagram-project"></i>
+                        <p>Haritaya başlamak için soldaki <b>hibritlerden</b> birini sürükle veya çift tıkla.</p>
+                        <p class="cm-keys"><kbd>Tekerlek</kbd> zoom · <kbd>Sürükle</kbd> pan · <kbd>Çift tık</kbd> düzenle · <kbd>Sağ tık</kbd> menü</p>
+                    </div>
+                </div>
+            </div>
+            <input type="file" id="casemapImportFile" accept="application/json" hidden>
+        </div>
+
+        <!-- Hibrit şablon düzenleme modalı -->
+        <div class="cm-modal" id="casemapTemplatesModal" hidden>
+            <div class="cm-modal-backdrop" data-close="1"></div>
+            <div class="cm-modal-card">
+                <div class="cm-modal-header">
+                    <h3><i class="fas fa-sliders"></i> Hibrit Şablonları</h3>
+                    <button class="cm-modal-close" data-close="1"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="cm-modal-body">
+                    <div class="cm-tpl-list" id="casemapTemplatesList"></div>
+                    <button class="cm-tpl-add" id="casemapTemplatesAdd"><i class="fas fa-plus"></i> Yeni Hibrit Ekle</button>
+                </div>
+                <div class="cm-modal-footer">
+                    <button class="cm-modal-btn ghost" data-close="1">Vazgeç</button>
+                    <button class="cm-modal-btn primary" id="casemapTemplatesSave"><i class="fas fa-check"></i> Kaydet</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pomodoro Tab -->
+        <div class="tab-content" id="pomodoroTab">
+            <div class="pomodoro-container">
+                <div class="timer-display">
+                    <div class="timer-circle">
+                        <svg class="timer-svg" viewBox="0 0 200 200">
+                            <circle cx="100" cy="100" r="90" class="timer-bg"></circle>
+                            <circle cx="100" cy="100" r="90" class="timer-progress" id="timerProgress"></circle>
+                        </svg>
+                        <div class="timer-text">
+                            <div class="timer-time" id="timerTime">25:00</div>
+                            <div class="timer-session" id="timerSession">Çalışma Zamanı</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="timer-controls">
+                    <button id="startPomodoroBtn" class="pomodoro-btn start">
+                        <i class="fas fa-play"></i> Başlat
+                    </button>
+                    <button id="pausePomodoroBtn" class="pomodoro-btn pause" style="display:none;">
+                        <i class="fas fa-pause"></i> Duraklat
+                    </button>
+                    <button id="resetPomodoroBtn" class="pomodoro-btn reset">
+                        <i class="fas fa-redo"></i> Sıfırla
+                    </button>
+                </div>
+
+                <div class="pomodoro-settings">
+                    <div class="setting-item">
+                        <label><i class="fas fa-briefcase"></i> Çalışma Süresi:</label>
+                        <div class="input-wrapper">
+                            <input type="number" id="workDuration" value="25" min="1" max="60">
+                            <span>dakika</span>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label><i class="fas fa-coffee"></i> Kısa Mola:</label>
+                        <div class="input-wrapper">
+                            <input type="number" id="shortBreak" value="5" min="1" max="30">
+                            <span>dakika</span>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label><i class="fas fa-couch"></i> Uzun Mola:</label>
+                        <div class="input-wrapper">
+                            <input type="number" id="longBreak" value="15" min="1" max="60">
+                            <span>dakika</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pomodoro-info">
+                    <div class="info-item">
+                        <i class="fas fa-check-double"></i>
+                        <div class="info-content">
+                            <span class="info-label">Tamamlanan</span>
+                            <span class="info-value" id="completedPomodoros">0</span>
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <i class="fas fa-hourglass-half"></i>
+                        <div class="info-content">
+                            <span class="info-label">Toplam Süre</span>
+                            <span class="info-value" id="totalTime">0 dk</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Files Tab -->
+        <div class="tab-content" id="filesTab">
+            <div class="files-toolbar">
+                <button id="filesBackBtn" class="files-nav-btn" title="Üst Klasör">
+                    <i class="fas fa-arrow-up"></i>
+                </button>
+                <button id="filesRefreshBtn" class="files-nav-btn" title="Yenile">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <div class="files-path-wrapper">
+                    <i class="fas fa-folder-open"></i>
+                    <span id="filesCurrentPath" class="files-path">Masaüstü</span>
+                </div>
+                <select id="filesSortSelect" class="files-sort-select" title="Sıralama">
+                    <option value="name-asc">İsim (A-Z)</option>
+                    <option value="name-desc">İsim (Z-A)</option>
+                    <option value="date-desc">Tarih (Yeni)</option>
+                    <option value="date-asc">Tarih (Eski)</option>
+                </select>
+                <div class="files-view-toggle">
+                    <button id="filesViewList" class="files-view-btn active" title="Liste Görünümü">
+                        <i class="fas fa-list"></i>
+                    </button>
+                    <button id="filesViewGrid" class="files-view-btn" title="Simge Görünümü">
+                        <i class="fas fa-th"></i>
+                    </button>
+                </div>
+                <button id="filesSelectFolderBtn" class="files-nav-btn" title="Klasör Seç">
+                    <i class="fas fa-folder-plus"></i>
+                </button>
+            </div>
+            <div class="files-quick-access">
+                <button id="filesQuickDesktop" class="files-quick-btn" title="Masaüstü">
+                    <i class="fas fa-desktop"></i>
+                    <span>Masaüstü</span>
+                </button>
+                <button id="filesQuickComputer" class="files-quick-btn" title="Bilgisayar">
+                    <i class="fas fa-laptop"></i>
+                    <span>Bilgisayar</span>
+                </button>
+                <button id="filesQuickCustom3" class="files-quick-btn custom-shortcut"
+                    title="Özel Klasör 3 (sağ tık: değiştir)">
+                    <i class="fas fa-folder-open"></i>
+                    <span id="filesQuickCustomLabel3">Kısayol 3</span>
+                </button>
+                <button id="filesQuickCustom" class="files-quick-btn custom-shortcut"
+                    title="Özel Klasör 1 (sağ tık: değiştir)">
+                    <i class="fas fa-star"></i>
+                    <span id="filesQuickCustomLabel">Kısayol 1</span>
+                </button>
+                <button id="filesQuickCustom2" class="files-quick-btn custom-shortcut"
+                    title="Özel Klasör 2 (sağ tık: değiştir)">
+                    <i class="fas fa-bookmark"></i>
+                    <span id="filesQuickCustomLabel2">Kısayol 2</span>
+                </button>
+            </div>
+            <div class="files-search-wrapper">
+                <i class="fas fa-search"></i>
+                <input type="text" id="filesSearchInput" class="files-search-input" placeholder="Dosya ara...">
+                <button id="filesSearchClear" class="files-search-clear" title="Temizle">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="files-list" id="filesList">
+                <div class="files-loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <span>Yükleniyor...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes Tab -->
+        <div class="tab-content" id="notesTab">
+            <!-- Notes Header -->
+            <div class="notes-header">
+                <div class="notes-search-box">
+                    <i class="fas fa-search notes-search-icon"></i>
+                    <input type="text" id="notesSearchInput" placeholder="Notlarda ara..." class="notes-search-input">
+                </div>
+                <button id="addNoteBtn" class="add-note-fab" title="Yeni Not">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+
+            <!-- Notes Accordion List -->
+            <div class="notes-accordion" id="notesList">
+                <div class="no-notes-message">
+                    <div class="no-notes-icon">
+                        <i class="fas fa-sticky-note"></i>
+                    </div>
+                    <p>Henüz not eklenmemiş</p>
+                    <small>Yeni bir not oluşturmak için + butonuna tıklayın</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Terminal Tab -->
+        <div class="tab-content" id="terminalTab">
+            <div class="terminal-container">
+                <div class="terminal-toolbar">
+                    <div class="terminal-title">
+                        <i class="fas fa-terminal"></i>
+                        <span id="terminalCwd" title="Dizini değiştirmek için tıkla">~</span>
+                        <button class="terminal-cwd-edit-btn" id="terminalCwdEditBtn" title="Çalışma dizinini değiştir">
+                            <i class="fas fa-folder-open"></i>
+                        </button>
+                    </div>
+                    <div class="terminal-toolbar-actions">
+                        <button class="terminal-toolbar-btn" id="terminalNewBtn" title="Yeni Terminal">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                        <button class="terminal-toolbar-btn" id="terminalKillBtn" title="Terminali Kapat">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="xtermContainer" class="xterm-container"></div>
+                <div class="terminal-shortcuts">
+                    <div class="terminal-shortcuts-header" id="terminalShortcutsToggle">
+                        <i class="fas fa-bolt"></i>
+                        <span>Kısayollar</span>
+                        <i class="fas fa-chevron-down terminal-shortcuts-chevron"></i>
+                    </div>
+                    <div class="terminal-shortcuts-body" id="terminalShortcutsBody">
+                        <div class="terminal-shortcut-list" id="terminalShortcutList"></div>
+                        <div class="terminal-shortcut-add">
+                            <input type="text" id="shortcutNameInput" placeholder="İsim" class="shortcut-input shortcut-name">
+                            <input type="text" id="shortcutCmdInput" placeholder="Komut" class="shortcut-input shortcut-cmd">
+                            <button class="shortcut-add-btn" id="shortcutAddBtn" title="Kısayol Ekle">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Browser Tab -->
+        <div class="tab-content" id="browserTab">
+            <div class="browser-main-layout">
+                <!-- Browser Section (Yeşil Alan) -->
+                <div class="browser-section">
+                    <div class="browser-container">
+                        <!-- Minimal Tab Bar -->
+                        <div class="browser-tabs" id="browserTabs">
+                            <div class="browser-tabs-list" id="browserTabsList">
+                                <!-- Sekmeler buraya dinamik eklenir -->
+                            </div>
+                            <button class="browser-new-tab-btn" id="browserNewTabBtn" title="Yeni Sekme">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                        <!-- URL Bar -->
+                        <div class="browser-toolbar">
+                            <button id="browserBackBtn" class="browser-nav-btn" title="Geri">
+                                <i class="fas fa-arrow-left"></i>
+                            </button>
+                            <button id="browserForwardBtn" class="browser-nav-btn" title="İleri">
+                                <i class="fas fa-arrow-right"></i>
+                            </button>
+                            <button id="browserRefreshBtn" class="browser-nav-btn" title="Yenile">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button id="browserHomeBtn" class="browser-nav-btn" title="Ana Sayfa">
+                                <i class="fas fa-home"></i>
+                            </button>
+                            <div class="browser-zoom-controls">
+                                <button id="browserZoomOutBtn" class="browser-nav-btn zoom-btn" title="Küçült">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <span id="browserZoomLevel" class="zoom-level">100%</span>
+                                <button id="browserZoomInBtn" class="browser-nav-btn zoom-btn" title="Büyüt">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <div class="browser-url-wrapper">
+                                <i class="fas fa-lock browser-secure-icon"></i>
+                                <input type="text" id="browserUrlInput" placeholder="Adres girin veya arama yapın..."
+                                    class="browser-url-input">
+                                <button id="browserGoBtn" class="browser-go-btn" title="Git">
+                                    <i class="fas fa-arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Browser View Container -->
+                        <div class="browser-view-container" id="browserContainer">
+                            <div class="browser-placeholder" id="browserPlaceholder">
+                                <i class="fab fa-youtube" style="color: #ff0000;"></i>
+                                <p>YouTube izlemek için bir video adresi girin</p>
+                                <small>Reklamlar ve sponsorlar otomatik atlanır</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resizable Divider -->
+                <div class="resize-divider" id="resizeDivider" title="Sürükleyerek boyutlandır"></div>
+
+                <!-- Botlar Not Alanı (Yeşil Alanın Altında) -->
+                <div class="bots-section" id="botsSection">
+                    <div class="bots-header">
+                        <div class="bots-title">
+                            <i class="fas fa-sticky-note"></i>
+                            <span>Notlarım</span>
+                        </div>
+                        <div class="bots-controls">
+                            <button class="bots-toggle-btn" id="botsToggleBtn" title="Alanı Genişlet/Daralt">
+                                <i class="fas fa-chevron-up"></i>
+                            </button>
+                            <button class="bots-clear-btn" id="botsClearBtn" title="Notları Temizle">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bots-content" id="botsContent">
+                        <textarea id="botsNotes" class="bots-textarea"
+                            placeholder="Buraya serbest notlarınızı yazın...&#10;&#10;İpucu: Video izlerken aldığınız notlar, fikirler, linkler...&#10;Notlarınız otomatik olarak kaydedilir."></textarea>
+                        <div class="bots-footer">
+                            <span class="bots-char-count" id="botsCharCount">0 karakter</span>
+                            <span class="bots-save-status" id="botsSaveStatus">
+                                <i class="fas fa-check-circle"></i> Kaydedildi
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- User Account Panel -->
+    <div class="account-panel" id="accountPanel">
+        <div class="account-header">
+            <h3><i class="fas fa-user"></i> Hesap Bilgileri</h3>
+            <button class="account-close" id="accountClose">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div class="account-content">
+            <div class="account-info">
+                <div class="account-avatar">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="account-details">
+                    <div class="account-label">Kullanıcı</div>
+                    <div class="account-email" id="accountEmail">-</div>
+                    <div class="account-type" id="accountType">
+                        <i class="fas fa-shield-alt"></i> <span id="accountTypeText">Yerel Hesap</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="account-stats-mini">
+                <div class="stat-mini">
+                    <i class="fas fa-sync"></i>
+                    <span id="syncStatusText">Senkronize Değil</span>
+                </div>
+            </div>
+
+            <div class="account-actions">
+                <button class="account-btn" id="loginAgainBtn">
+                    <i class="fas fa-sign-in-alt"></i> Giriş Yap / Hesap Değiştir
+                </button>
+                <button class="account-btn danger" id="logoutBtn" style="display: none;">
+                    <i class="fas fa-sign-out-alt"></i> Çıkış Yap
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+            <h3><i class="fas fa-cog"></i> Ayarlar</h3>
+            <button class="settings-close" id="settingsClose">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div class="settings-content">
+            <!-- Opacity Control -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-adjust"></i>
+                    <span>Şeffaflık</span>
+                </div>
+                <div class="opacity-control">
+                    <input type="range" id="opacitySlider" min="50" max="100" value="100" class="opacity-slider">
+                    <span class="opacity-value" id="opacityValue">100%</span>
+                </div>
+            </div>
+
+            <!-- Color Palette -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-palette"></i>
+                    <span>Renk Teması</span>
+                </div>
+                <div class="color-palettes">
+                    <button class="palette-btn active" data-palette="indigo" title="İndigo">
+                        <span class="palette-color palette-color-indigo"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="emerald" title="Zümrüt">
+                        <span class="palette-color palette-color-emerald"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="rose" title="Gül">
+                        <span class="palette-color palette-color-rose"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="amber" title="Kehribar">
+                        <span class="palette-color palette-color-amber"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="sky" title="Gök">
+                        <span class="palette-color palette-color-sky"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="purple" title="Mor">
+                        <span class="palette-color palette-color-purple"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="teal" title="Turkuaz">
+                        <span class="palette-color palette-color-teal"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="crimson" title="Kırmızı">
+                        <span class="palette-color palette-color-crimson"></span>
+                    </button>
+                    <button class="palette-btn" data-palette="gray" title="Gri">
+                        <span class="palette-color palette-color-gray"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Custom Color Picker -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-fill-drip"></i>
+                    <span>Özel Renk Seçici</span>
+                </div>
+                <div class="custom-color-section">
+                    <div class="color-picker-group">
+                        <div class="color-picker-item">
+                            <label>Ana Renk:</label>
+                            <input type="color" id="customColorPrimary" value="#6366f1" class="color-picker-input">
+                        </div>
+                        <div class="color-picker-item">
+                            <label>İkincil Renk:</label>
+                            <input type="color" id="customColorSecondary" value="#8b5cf6" class="color-picker-input">
+                        </div>
+                    </div>
+                    <div class="custom-color-preview" id="customColorPreview">
+                        <span>Önizleme</span>
+                    </div>
+                    <button class="apply-custom-color-btn" id="applyCustomColorBtn">
+                        <i class="fas fa-check"></i> Özel Rengi Uygula
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sound Effects -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-volume-up"></i>
+                    <span>Ses Efektleri</span>
+                </div>
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="soundEffects" checked>
+                    <span>Ses efektlerini aç</span>
+                </label>
+            </div>
+
+            <!-- Animations -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-magic"></i>
+                    <span>Animasyonlar</span>
+                </div>
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="animations">
+                    <span>Animasyonları aç</span>
+                </label>
+            </div>
+
+            <!-- Performans Modu (GPU hizlandirmasi) -->
+            <div class="settings-section" id="lowPowerModeSection">
+                <div class="settings-label">
+                    <i class="fas fa-bolt"></i>
+                    <span>Performans Modu</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="lowPowerModeToggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <small class="settings-hint">
+                    <i class="fas fa-info-circle"></i> GPU hızlandırmasını kapatır. CPU kullanımı artabilir ama transparan pencere kasması azalır. Yeniden başlatma gerekir.
+                </small>
+            </div>
+
+            <!-- Auto-Launch (Windows Başlangıç) -->
+            <div class="settings-section" id="autoLaunchSection">
+                <div class="settings-label">
+                    <i class="fas fa-power-off"></i>
+                    <span>Windows ile Başlat</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="autoLaunchToggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <small class="settings-hint">
+                    <i class="fas fa-info-circle"></i> Bilgisayar açıldığında uygulama otomatik başlar
+                </small>
+            </div>
+
+            <!-- Developer Tools -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-terminal"></i>
+                    <span>Geliştirici Konsolu</span>
+                </div>
+                <button class="settings-action-btn" id="devToolsBtn" type="button">
+                    <i class="fas fa-tools"></i> DevTools Aç / Kapat
+                </button>
+                <small class="settings-hint">
+                    <i class="fas fa-info-circle"></i> Yalnızca masaüstü uygulamasında çalışır
+                </small>
+            </div>
+
+            <!-- Task Text Size -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-text-height"></i>
+                    <span>Görev Yazı Boyutu</span>
+                </div>
+                <div class="size-control">
+                    <input type="range" id="textSizeSlider" min="12" max="18" value="15" class="size-slider">
+                    <span class="size-value" id="textSizeValue">15px</span>
+                </div>
+            </div>
+
+            <!-- Task Box Padding -->
+            <div class="settings-section">
+                <div class="settings-label">
+                    <i class="fas fa-expand-alt"></i>
+                    <span>Görev Kutusu Boyutu</span>
+                </div>
+                <div class="size-control">
+                    <input type="range" id="boxPaddingSlider" min="2" max="10" value="6" class="size-slider">
+                    <span class="size-value" id="boxPaddingValue">6px</span>
+                </div>
+            </div>
+
+            <!-- Statistics (collapsible) -->
+            <div class="settings-section settings-stats-section">
+                <div class="settings-label settings-stats-toggle" id="settingsStatsToggle">
+                    <i class="fas fa-chart-simple"></i>
+                    <span>İstatistikler</span>
+                    <i class="fas fa-chevron-down settings-stats-chevron"></i>
+                </div>
+                <div class="settings-stats-body" id="settingsStatsBody">
+                    <div class="settings-stats-grid">
+                        <div class="settings-stat-item">
+                            <span class="settings-stat-label">Toplam Görev</span>
+                            <span class="settings-stat-value" id="totalTasks">0</span>
+                        </div>
+                        <div class="settings-stat-item">
+                            <span class="settings-stat-label">Tamamlanan</span>
+                            <span class="settings-stat-value success" id="completedTasks">0</span>
+                        </div>
+                        <div class="settings-stat-item">
+                            <span class="settings-stat-label">Pomodoro</span>
+                            <span class="settings-stat-value warning" id="totalPomodoros">0</span>
+                        </div>
+                        <div class="settings-stat-item">
+                            <span class="settings-stat-label">Toplam Dakika</span>
+                            <span class="settings-stat-value info" id="totalMinutes">0</span>
+                        </div>
+                    </div>
+                    <div class="settings-stat-productivity">
+                        <div class="settings-stat-prod-header">
+                            <span>Verimlilik</span>
+                            <span id="productivityPercent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="productivityProgress"></div>
+                        </div>
+                    </div>
+                    <button id="resetStatsBtn" class="reset-stats-btn small">
+                        <i class="fas fa-trash-restore"></i> Sıfırla
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Note Delete Confirm Modal -->
+    <div class="note-delete-modal-overlay" id="noteDeleteModal">
+        <div class="note-delete-modal">
+            <div class="note-delete-modal-icon">
+                <i class="fas fa-trash-alt"></i>
+            </div>
+            <h3 class="note-delete-modal-title">Notu Sil</h3>
+            <p class="note-delete-modal-desc">
+                <span id="noteDeleteName"></span> silinecek. Bu işlem geri alınamaz.
+            </p>
+            <div class="note-delete-modal-actions">
+                <button class="note-delete-modal-cancel" id="noteDeleteCancel">
+                    Vazgeç <kbd>Esc</kbd>
+                </button>
+                <button class="note-delete-modal-confirm" id="noteDeleteConfirm">
+                    <i class="fas fa-trash-alt"></i> Sil <kbd>Enter</kbd>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div class="rename-modal" id="renameModal">
+        <div class="rename-modal-content">
+            <div class="rename-modal-header">
+                <h3><i class="fas fa-pen"></i> Yeniden Adlandır</h3>
+                <button class="rename-modal-close" id="renameModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="rename-modal-body">
+                <label for="renameInput">Yeni isim:</label>
+                <input type="text" id="renameInput" class="rename-input" placeholder="Yeni isim girin...">
+            </div>
+            <div class="rename-modal-footer">
+                <button class="rename-btn-cancel" id="renameCancelBtn">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button class="rename-btn-confirm" id="renameConfirmBtn">
+                    <i class="fas fa-check"></i> Kaydet
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-modal-content">
+            <div class="confirm-modal-header">
+                <h3><i class="fas fa-exclamation-triangle"></i> <span id="confirmModalTitle">Onay</span></h3>
+            </div>
+            <div class="confirm-modal-body">
+                <p id="confirmModalMessage">Bu işlemi onaylıyor musunuz?</p>
+            </div>
+            <div class="confirm-modal-footer">
+                <button class="confirm-btn-cancel" id="confirmCancelBtn">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button class="confirm-btn-confirm" id="confirmConfirmBtn">
+                    <i class="fas fa-check"></i> Evet
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div class="alert-modal" id="alertModal">
+        <div class="alert-modal-content">
+            <div class="alert-modal-header">
+                <h3><i class="fas fa-info-circle"></i> <span id="alertModalTitle">Bilgi</span></h3>
+            </div>
+            <div class="alert-modal-body">
+                <p id="alertModalMessage">Mesaj</p>
+            </div>
+            <div class="alert-modal-footer">
+                <button class="alert-btn-ok" id="alertOkBtn">
+                    <i class="fas fa-check"></i> Tamam
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import File Input (Hidden) -->
+    <input type="file" id="importFileInput" accept=".json" class="hidden">
+
+    <!-- Main Application (Modular ES6) -->
+    <script type="module" src="src/app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src * data: blob:; connect-src * blob: data:; object-src 'none'; base-uri 'self'; form-action 'self';">
+    <title>TaskMaster Pro - Hibrit Harita</title>
+    <link rel="icon" type="image/svg+xml" href="src/assets/favicon.svg">
+    <link rel="stylesheet" href="src/styles/style.css">
+    <link rel="stylesheet" href="src/styles/casemap-window.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body class="casemap-window-body">
+    <main class="casemap-window-shell">
+        <div class="tab-content active" id="todoTab">
+            <div class="casemap-root">
+                <header class="casemap-palette" id="casemapPalette">
+                    <span class="casemap-palette-title"><i class="fas fa-shapes"></i> Hibritler</span>
+                    <div class="casemap-palette-list" id="casemapPaletteList"></div>
+                    <button class="casemap-palette-edit" id="casemapEditTemplatesBtn" title="Şablonları düzenle">
+                        <i class="fas fa-sliders"></i>
+                    </button>
+                </header>
+                <nav class="casemap-toolbar">
+                    <button class="cm-tool-btn" data-action="fit" title="Sığdır (H)"><i class="fas fa-expand"></i></button>
+                    <button class="cm-tool-btn" data-action="zoom-in" title="Yakınlaştır"><i class="fas fa-plus"></i></button>
+                    <button class="cm-tool-btn" data-action="zoom-out" title="Uzaklaştır"><i class="fas fa-minus"></i></button>
+                    <span class="cm-zoom-indicator" id="casemapZoomIndicator">100%</span>
+                    <span class="cm-tool-sep"></span>
+                    <button class="cm-tool-btn" data-action="undo" title="Geri Al (Ctrl+Z)"><i class="fas fa-rotate-left"></i></button>
+                    <button class="cm-tool-btn" data-action="redo" title="Yinele (Ctrl+Y)"><i class="fas fa-rotate-right"></i></button>
+                    <span class="cm-tool-sep"></span>
+                    <input type="text" id="casemapSearch" class="cm-search" placeholder="Ara…">
+                    <span class="cm-tool-sep"></span>
+                    <label class="cm-bright" title="Arka plan ışığı">
+                        <i class="fas fa-sun"></i>
+                        <input type="range" id="casemapBrightness" min="0" max="100" value="0">
+                    </label>
+                    <span class="cm-tool-spacer"></span>
+                    <button class="cm-tool-btn" data-action="export" title="Dışa Aktar"><i class="fas fa-download"></i></button>
+                    <button class="cm-tool-btn" data-action="import" title="İçe Aktar"><i class="fas fa-upload"></i></button>
+                </nav>
+                <div class="casemap-stage">
+                    <canvas id="casemapCanvas"></canvas>
+                    <aside class="casemap-inspector" id="casemapInspector" hidden>
+                        <div class="cm-insp-header">
+                            <span class="cm-insp-title">Düğüm</span>
+                            <button class="cm-insp-close" id="casemapInspectorClose" title="Kapat"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div class="cm-insp-body">
+                            <label class="cm-insp-label">Başlık</label>
+                            <input type="text" id="cmInspTitle" class="cm-insp-input">
+                            <label class="cm-insp-label">Durum</label>
+                            <div class="cm-insp-status" id="cmInspStatus">
+                                <button class="cm-status-btn" data-status="todo">Yapılacak</button>
+                                <button class="cm-status-btn" data-status="doing">Devam</button>
+                                <button class="cm-status-btn" data-status="done">Bitti</button>
+                                <button class="cm-status-btn" data-status="blocked">Bloke</button>
+                            </div>
+                            <label class="cm-insp-label">Renk Şeması</label>
+                            <select id="cmInspHybrid" class="cm-insp-input"></select>
+                            <label class="cm-insp-label">Not</label>
+                            <textarea id="cmInspNote" class="cm-insp-textarea" rows="3" placeholder="Dedektif notu…"></textarea>
+                            <div class="cm-insp-actions">
+                                <button class="cm-insp-action danger" id="cmInspDelete"><i class="fas fa-trash"></i> Sil</button>
+                                <button class="cm-insp-action" id="cmInspDuplicate"><i class="fas fa-copy"></i> Kopyala</button>
+                            </div>
+                        </div>
+                    </aside>
+                    <div class="casemap-context-menu" id="casemapContextMenu" hidden></div>
+                    <div class="casemap-empty-hint" id="casemapEmptyHint">
+                        <i class="fas fa-diagram-project"></i>
+                        <p>Haritaya başlamak için soldaki <b>hibritlerden</b> birini sürükle veya çift tıkla.</p>
+                        <p class="cm-keys"><kbd>Tekerlek</kbd> zoom · <kbd>Sürükle</kbd> pan · <kbd>Çift tık</kbd> düzenle · <kbd>Sağ tık</kbd> menü</p>
+                    </div>
+                </div>
+            </div>
+            <input type="file" id="casemapImportFile" accept="application/json" hidden>
+        </div>
+
+        <div class="cm-modal" id="casemapTemplatesModal" hidden>
+            <div class="cm-modal-backdrop" data-close="1"></div>
+            <div class="cm-modal-card">
+                <div class="cm-modal-header">
+                    <h3><i class="fas fa-sliders"></i> Hibrit Şablonları</h3>
+                    <button class="cm-modal-close" data-close="1"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="cm-modal-body">
+                    <div class="cm-tpl-list" id="casemapTemplatesList"></div>
+                    <button class="cm-tpl-add" id="casemapTemplatesAdd"><i class="fas fa-plus"></i> Yeni Hibrit Ekle</button>
+                </div>
+                <div class="cm-modal-footer">
+                    <button class="cm-modal-btn ghost" data-close="1">Vazgeç</button>
+                    <button class="cm-modal-btn primary" id="casemapTemplatesSave"><i class="fas fa-check"></i> Kaydet</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="src/modules/casemap-window.js"></script>
+</body>
+
+</html>

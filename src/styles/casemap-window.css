@@ -1,0 +1,38 @@
+html,
+body {
+    width: 100%;
+    height: 100%;
+}
+
+body.casemap-window-body {
+    background: #03040c;
+    overflow: hidden;
+    user-select: none;
+}
+
+.casemap-window-shell {
+    width: 100vw;
+    height: 100vh;
+    padding: 10px;
+    background:
+        radial-gradient(circle at 15% 0%, rgba(var(--secondary-rgb), 0.14), transparent 34%),
+        radial-gradient(circle at 92% 100%, rgba(var(--primary-rgb), 0.16), transparent 38%),
+        #03040c;
+}
+
+.casemap-window-shell #todoTab {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+}
+
+.casemap-window-shell .casemap-root {
+    min-height: 0;
+    border-radius: 8px;
+}
+
+.casemap-window-shell .cm-modal {
+    position: fixed;
+}
