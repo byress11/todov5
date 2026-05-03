@@ -911,10 +911,57 @@
                     <span id="tbLevelBannerSub">Başlangıç Alanı</span>
                 </div>
             </div>
+            <div class="task-blaster-touch-controls" id="taskBlasterTouchControls" aria-label="Dokunmatik oyun kontrolleri">
+                <div class="tb-touch-weapons" aria-label="Silah geçişleri">
+                    <button type="button" class="tb-touch-weapon active" data-tb-weapon="blaster" title="Blaster">
+                        <i class="fas fa-bolt"></i>
+                        <span>BL</span>
+                    </button>
+                    <button type="button" class="tb-touch-weapon" data-tb-weapon="spread" title="Üçlü atış">
+                        <i class="fas fa-fan"></i>
+                        <span>ÜÇ</span>
+                    </button>
+                    <button type="button" class="tb-touch-weapon" data-tb-weapon="rocket" title="Roket">
+                        <i class="fas fa-rocket"></i>
+                        <span>RK</span>
+                    </button>
+                </div>
+                <div class="tb-touch-skills" aria-label="Envanter becerileri">
+                    <button type="button" class="tb-touch-skill" data-tb-skill="1" title="Nova">
+                        <i class="fas fa-burst"></i>
+                        <span>Nova</span>
+                        <b class="tb-touch-count">0</b>
+                    </button>
+                    <button type="button" class="tb-touch-skill" data-tb-skill="2" title="Tamir">
+                        <i class="fas fa-kit-medical"></i>
+                        <span>Tamir</span>
+                        <b class="tb-touch-count">1</b>
+                    </button>
+                    <button type="button" class="tb-touch-skill" data-tb-skill="3" title="Drone">
+                        <i class="fas fa-satellite-dish"></i>
+                        <span>Drone</span>
+                        <b class="tb-touch-count">0</b>
+                    </button>
+                    <button type="button" class="tb-touch-skill" data-tb-skill="4" title="Zaman yavaşlat">
+                        <i class="fas fa-hourglass-half"></i>
+                        <span>Zaman</span>
+                        <b class="tb-touch-count">0</b>
+                    </button>
+                </div>
+                <div class="tb-touch-system" aria-label="Ateş ve duraklat">
+                    <button type="button" class="tb-touch-fire" id="tbTouchFireBtn" title="Basılı tutarak ateş et">
+                        <i class="fas fa-crosshairs"></i>
+                        <span>Ateş</span>
+                    </button>
+                    <button type="button" class="tb-touch-pause" id="tbTouchPauseBtn" title="Duraklat">
+                        <i class="fas fa-pause"></i>
+                    </button>
+                </div>
+            </div>
             <footer class="task-blaster-help">
                 <kbd>WASD</kbd> / <kbd>Oklar</kbd> veya sürükle · <kbd>Boşluk</kbd> / basılı tut ateş · <kbd>P</kbd> duraklat
                 <span class="tb-help-tip">Ekipman: A zırh · S kalkan · B blaster · W üçlü atış · R roket · N nova · T tamir · D drone · Z zaman</span>
-                <span class="tb-help-tip">Envanter becerileri: <kbd>1</kbd> Nova · <kbd>2</kbd> Tamir · <kbd>3</kbd> Drone · <kbd>4</kbd> Zaman yavaşlat</span>
+                <span class="tb-help-tip">Envanter becerileri: <kbd>1</kbd> Nova · <kbd>2</kbd> Tamir · <kbd>3</kbd> Drone · <kbd>4</kbd> Zaman yavaşlat · mobilde alttaki beceri tuşları</span>
             </footer>
             <div class="task-blaster-start" id="taskBlasterStartPanel">
                 <p class="tb-lead">Olay haritandaki <strong>hibritler</strong> ve görev listendeki <strong>görevler</strong> canlı düşmanlara dönüşür. 5 leveli kır, sonsuz moda dayan.</p>

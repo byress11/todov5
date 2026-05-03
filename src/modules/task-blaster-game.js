@@ -140,7 +140,15 @@ let resizeObs = null;
 let keyHandler = null;
 let audioCtx = null;
 let pointerDown = false;
+let touchFireDown = false;
 let selectedWeapon = 'blaster';
+
+const INVENTORY_SKILLS = {
+    1: { key: 'nova', label: 'Nova' },
+    2: { key: 'repair', label: 'Tamir' },
+    3: { key: 'drone', label: 'Drone' },
+    4: { key: 'slow', label: 'Zaman' },
+};
 
 const game = {
     phase: 'idle',
@@ -303,6 +311,36 @@ function showLevelBanner(title, subtitle) {
     bannerSubEl.textContent = subtitle;
 }
 
+function hasTemporaryWeapon(p = game.player) {
+    return !!p && (p.spreadT > 0 || p.rapidT > 0 || p.rocketT > 0);
+}
+
+function syncTouchControls() {
+    if (!overlay) return;
+    const p = game.player;
+    const canUseSkills = game.phase === 'play' && !!p;
+    for (const btn of overlay.querySelectorAll('[data-tb-skill]')) {
+        const skill = INVENTORY_SKILLS[btn.dataset.tbSkill];
+        const count = skill && p?.inventory ? p.inventory[skill.key] || 0 : 0;
+        const countEl = btn.querySelector('.tb-touch-count');
+        if (countEl) countEl.textContent = String(count);
+        btn.disabled = !canUseSkills || count <= 0 || p.skillCd > 0;
+        btn.classList.toggle('ready', canUseSkills && count > 0 && p.skillCd <= 0);
+    }
+    for (const btn of overlay.querySelectorAll('[data-tb-weapon]')) {
+        btn.classList.toggle('active', btn.dataset.tbWeapon === selectedWeapon);
+    }
+    const pauseBtn = document.getElementById('tbTouchPauseBtn');
+    if (pauseBtn) {
+        pauseBtn.disabled = game.phase !== 'play' && game.phase !== 'paused';
+        pauseBtn.classList.toggle('paused', game.phase === 'paused');
+        const icon = pauseBtn.querySelector('i');
+        if (icon) {
+            icon.className = game.phase === 'paused' ? 'fas fa-play' : 'fas fa-pause';
+        }
+    }
+}
+
 function updateHud() {
     const p = game.player;
     if (hudScore) hudScore.textContent = String(Math.floor(game.score));
@@ -331,6 +369,7 @@ function updateHud() {
             hudCombo.hidden = true;
         }
     }
+    syncTouchControls();
 }
 
 function resetRun() {
@@ -534,6 +573,8 @@ function damagePlayer(amount = 1) {
     beep(95, 0.18, 0.06, 'sawtooth');
     if (p.lives <= 0) {
         game.phase = 'over';
+        pointerDown = false;
+        touchFireDown = false;
         if (gameOverEl) gameOverEl.hidden = false;
         if (finalScoreEl) finalScoreEl.textContent = String(Math.floor(game.score));
         if (finalLevelEl) finalLevelEl.textContent = game.level > LEVELS.length ? `Sonsuz ${endlessBonus()}` : String(game.level);
@@ -823,7 +864,7 @@ function step(dt) {
     p.x = Math.max(22, Math.min(game.w - 22, p.x));
     p.y = Math.max(game.h * 0.48, Math.min(game.h - 42, p.y));
 
-    const wantsFire = keys[' '] || keys.Space || pointerDown;
+    const wantsFire = keys[' '] || keys.Space || pointerDown || touchFireDown;
     const weapon = WEAPONS[p.weapon] || WEAPONS.blaster;
     const cdMul = p.rapidT > 0 ? 0.72 : 1;
     if (wantsFire && p.fireCd <= 0) {
@@ -1293,14 +1334,23 @@ function startLoop() {
     rafId = requestAnimationFrame(frame);
 }
 
+function togglePause() {
+    if (game.phase === 'play') {
+        game.phase = 'paused';
+        touchFireDown = false;
+    } else if (game.phase === 'paused') {
+        game.phase = 'play';
+    }
+    updateHud();
+}
+
 function onKeyDown(ev) {
     if (!overlay || overlay.hidden) return;
     if (game.phase === 'play' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Space', 'a', 'A', 'd', 'D', 'w', 'W', 's', 'S'].includes(ev.key)) {
         ev.preventDefault();
     }
     if (ev.key === 'p' || ev.key === 'P') {
-        if (game.phase === 'play') game.phase = 'paused';
-        else if (game.phase === 'paused') game.phase = 'play';
+        togglePause();
     }
     if (game.phase === 'play' && ['1', '2', '3', '4'].includes(ev.key) && !ev.repeat) {
         ev.preventDefault();
@@ -1317,6 +1367,8 @@ function onKeyUp(ev) {
 
 function bindPointer() {
     canvas.addEventListener('pointerdown', (e) => {
+        if (game.phase !== 'play' || !game.player) return;
+        e.preventDefault();
         pointerDown = true;
         canvas.setPointerCapture(e.pointerId);
         const r = canvas.getBoundingClientRect();
@@ -1330,7 +1382,9 @@ function bindPointer() {
         pointerDown = false;
     });
     canvas.addEventListener('pointermove', (e) => {
+        if (game.phase !== 'play' || !game.player) return;
         if (!pointerDown && e.buttons !== 1) return;
+        e.preventDefault();
         const r = canvas.getBoundingClientRect();
         const x = e.clientX - r.left;
         const y = e.clientY - r.top;
@@ -1356,6 +1410,7 @@ function closeOverlay() {
     stopLoop();
     document.body.style.overflow = '';
     pointerDown = false;
+    touchFireDown = false;
     if (keyHandler) {
         window.removeEventListener('keydown', keyHandler.down, true);
         window.removeEventListener('keyup', keyHandler.up, true);
@@ -1366,6 +1421,8 @@ function closeOverlay() {
 function startGame() {
     if (startPanel) startPanel.hidden = true;
     if (gameOverEl) gameOverEl.hidden = true;
+    pointerDown = false;
+    touchFireDown = false;
     if (keyHandler) {
         window.removeEventListener('keydown', keyHandler.down, true);
         window.removeEventListener('keyup', keyHandler.up, true);
@@ -1376,16 +1433,71 @@ function startGame() {
     keyHandler = { down: onKeyDown, up: onKeyUp };
     window.addEventListener('keydown', keyHandler.down, true);
     window.addEventListener('keyup', keyHandler.up, true);
+    updateHud();
     startLoop();
+}
+
+function selectWeapon(weapon, opts = {}) {
+    if (!WEAPONS[weapon]) return;
+    selectedWeapon = weapon;
+    const p = game.player;
+    if (p && (opts.force || !hasTemporaryWeapon(p))) {
+        p.weapon = selectedWeapon;
+        if (opts.force) {
+            p.spreadT = 0;
+            p.rapidT = 0;
+            p.rocketT = 0;
+        }
+    }
+    updateHud();
 }
 
 function bindWeaponChoices() {
     const choices = overlay.querySelectorAll('[data-tb-weapon]');
     for (const btn of choices) {
         btn.classList.toggle('active', btn.dataset.tbWeapon === selectedWeapon);
-        btn.addEventListener('click', () => {
-            selectedWeapon = btn.dataset.tbWeapon || 'blaster';
-            for (const item of choices) item.classList.toggle('active', item === btn);
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            selectWeapon(btn.dataset.tbWeapon || 'blaster', { force: game.phase === 'play' });
+        });
+    }
+}
+
+function bindTouchControls() {
+    const fireBtn = document.getElementById('tbTouchFireBtn');
+    if (fireBtn) {
+        fireBtn.addEventListener('pointerdown', (ev) => {
+            ev.preventDefault();
+            if (game.phase !== 'play') return;
+            touchFireDown = true;
+            fireBtn.classList.add('firing');
+            try { fireBtn.setPointerCapture(ev.pointerId); } catch (_) { /* optional */ }
+        });
+        const releaseFire = (ev) => {
+            touchFireDown = false;
+            fireBtn.classList.remove('firing');
+            if (ev?.pointerId) {
+                try { fireBtn.releasePointerCapture(ev.pointerId); } catch (_) { /* optional */ }
+            }
+        };
+        fireBtn.addEventListener('pointerup', releaseFire);
+        fireBtn.addEventListener('pointercancel', releaseFire);
+        fireBtn.addEventListener('lostpointercapture', releaseFire);
+    }
+
+    const pauseBtn = document.getElementById('tbTouchPauseBtn');
+    if (pauseBtn) {
+        pauseBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            togglePause();
+        });
+    }
+
+    for (const btn of overlay.querySelectorAll('[data-tb-skill]')) {
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            if (game.phase !== 'play') return;
+            castInventorySkill(btn.dataset.tbSkill);
             updateHud();
         });
     }
@@ -1426,6 +1538,7 @@ export function initializeTaskBlasterGame() {
     if (restartBtn) restartBtn.addEventListener('click', startGame);
     bindWeaponChoices();
     bindPointer();
+    bindTouchControls();
 
     game.player = {
         x: 0,
