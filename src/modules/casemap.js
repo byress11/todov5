@@ -58,7 +58,7 @@ let crossWindowSyncBound = false;
 let syncChannel = null;
 
 // ---------- DOM refs ----------
-let canvas, ctx, root, palette, paletteList, toolbar, inspector, ctxMenu, emptyHint, zoomIndicator, searchInput;
+let canvas, ctx, root, palette, paletteList, toolbar, inspector, ctxMenu, emptyHint, zoomIndicator, searchInput, mobileActions;
 let dpr = 1, cssW = 0, cssH = 0;
 
 // 2.5D parallax tilt — kaldırıldı (drag/zoom sırasında konumlandırma hissini bozuyordu)
@@ -203,6 +203,7 @@ export function applyCaseMapSnapshot(snapshot, options = {}) {
 
         if (paletteList) renderPalette();
         if (inspectorBoundId && !state.nodes.some(n => n.id === inspectorBoundId)) closeInspector();
+        updateMobileActions();
         requestRedraw();
         return true;
     } catch (e) {
@@ -325,6 +326,90 @@ function getHybrid(key) {
     return hybrids.find(h => h.key === key) || hybrids[0] || DEFAULT_HYBRIDS[0];
 }
 
+function isMobileInteractionMode() {
+    if (typeof window === 'undefined' || !window.matchMedia) return false;
+    return window.matchMedia('(max-width: 768px), (hover: none) and (pointer: coarse)').matches;
+}
+
+function getSingleSelectedNode() {
+    if (state.selection.size !== 1) return null;
+    const id = [...state.selection][0];
+    return state.nodes.find(n => n.id === id) || null;
+}
+
+function updateMobileActions() {
+    if (!mobileActions) return;
+    if (!isMobileInteractionMode() || (inspector && !inspector.hidden)) {
+        mobileActions.hidden = true;
+        return;
+    }
+
+    const n = getSingleSelectedNode();
+    if (!n) {
+        mobileActions.hidden = true;
+        return;
+    }
+
+    const hasChildren = state.nodes.some(x => x.parentId === n.id);
+    const status = n.status || 'todo';
+    mobileActions.innerHTML = `
+        <div class="cm-mobile-selection">
+            <span class="cm-mobile-title">${escapeAttr(n.title || getHybrid(n.hybridKey).title || 'Secili')}</span>
+            <span class="cm-mobile-status">${escapeAttr(STATUS_LABELS[status] || status)}</span>
+        </div>
+        <div class="cm-mobile-buttons">
+            <button type="button" data-mobile-action="edit" title="Duzenle"><i class="fas fa-pen"></i><span>Duzenle</span></button>
+            <button type="button" data-mobile-action="add" title="Alt is ekle"><i class="fas fa-circle-plus"></i><span>Alt is</span></button>
+            <button type="button" data-mobile-action="status" title="Durum degistir"><i class="fas fa-circle-half-stroke"></i><span>Durum</span></button>
+            ${hasChildren ? `<button type="button" data-mobile-action="toggle" title="Goster/Gizle"><i class="fas ${n.expanded ? 'fa-eye-slash' : 'fa-eye'}"></i><span>${n.expanded ? 'Gizle' : 'Goster'}</span></button>` : ''}
+            <button type="button" data-mobile-action="duplicate" title="Kopyala"><i class="fas fa-copy"></i><span>Kopyala</span></button>
+            <button type="button" data-mobile-action="delete" class="danger" title="Sil"><i class="fas fa-trash"></i><span>Sil</span></button>
+        </div>
+    `;
+    mobileActions.hidden = false;
+}
+
+function bindMobileActions() {
+    if (!canvas || mobileActions) return;
+    mobileActions = document.createElement('div');
+    mobileActions.className = 'casemap-mobile-actions';
+    mobileActions.hidden = true;
+    canvas.parentElement.appendChild(mobileActions);
+
+    mobileActions.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-mobile-action]');
+        if (!btn) return;
+        const n = getSingleSelectedNode();
+        if (!n) return;
+
+        const action = btn.dataset.mobileAction;
+        if (action === 'edit') {
+            openInspector(n);
+        } else if (action === 'add') {
+            addSatellite(n);
+        } else if (action === 'toggle') {
+            n.expanded = !n.expanded;
+            requestRedraw();
+            persist();
+        } else if (action === 'duplicate') {
+            duplicateNode(n);
+        } else if (action === 'delete') {
+            deleteSelection();
+        } else if (action === 'status') {
+            const order = Object.keys(STATUS_LABELS);
+            const idx = order.indexOf(n.status || 'todo');
+            pushUndo();
+            n.status = order[(idx + 1) % order.length];
+            n.updatedAt = Date.now();
+            requestRedraw();
+            persist();
+        }
+        updateMobileActions();
+    });
+
+    window.addEventListener('resize', updateMobileActions);
+}
+
 // ---------- Coords ----------
 function screenToWorld(sx, sy) {
     return { x: (sx - state.view.x) / state.view.zoom, y: (sy - state.view.y) / state.view.zoom };
@@ -349,10 +434,11 @@ function addBtnAtScreen(sx, sy) {
         const n = state.nodes[i];
         if (isNodeHidden(n)) continue;
         // Yalnızca hover/seçili düğüm için + görünür → yalnızca onu test et
-        if (state.hoveredAddBtn !== n.id && state.hovered !== n.id && !state.selection.has(n.id)) continue;
+        if (!isMobileInteractionMode() && state.hoveredAddBtn !== n.id && state.hovered !== n.id && !state.selection.has(n.id)) continue;
         const p = worldToScreen(n.cx, n.cy + n.r + ADD_BTN_OFF);
         const dx = sx - p.x, dy = sy - p.y;
-        if (dx * dx + dy * dy <= 11 * 11) return n;
+        const hitR = isMobileInteractionMode() ? 19 : 11;
+        if (dx * dx + dy * dy <= hitR * hitR) return n;
     }
     return null;
 }
@@ -1038,6 +1124,7 @@ function addNode(opts) {
     });
     state.nodes.push(n);
     state.selection.clear(); state.selection.add(n.id);
+    updateMobileActions();
     requestRedraw(); persist();
     return n;
 }
@@ -1082,6 +1169,7 @@ function deleteSelection() {
     state.nodes = state.nodes.filter(n => !toDelete.has(n.id));
     state.edges = state.edges.filter(e => !toDelete.has(e.from) && !toDelete.has(e.to));
     state.selection.clear();
+    updateMobileActions();
     requestRedraw(); persist();
 }
 
@@ -1124,6 +1212,7 @@ function onPointerDown(ev) {
         const w = screenToWorld(sx, sy);
         const n = nodeAtWorld(w.x, w.y);
         if (n && !state.selection.has(n.id)) { state.selection.clear(); state.selection.add(n.id); }
+        updateMobileActions();
         showContextMenu(ev.clientX, ev.clientY, n);
         ev.preventDefault();
         requestRedraw();
@@ -1157,6 +1246,7 @@ function onPointerDown(ev) {
     if (node) {
         if (!ev.shiftKey && !state.selection.has(node.id)) state.selection.clear();
         state.selection.add(node.id);
+        updateMobileActions();
         ix.mode = 'drag';
         ix.pressNodeId = node.id;
         ix.dragOffsets = new Map();
@@ -1183,7 +1273,7 @@ function onPointerDown(ev) {
         ix.mode = 'marquee';
         ix.marqueeRect = { x: w.x, y: w.y, w: 0, h: 0 };
     } else {
-        if (state.selection.size) { state.selection.clear(); requestRedraw(); }
+        if (state.selection.size) { state.selection.clear(); updateMobileActions(); requestRedraw(); }
         ix.mode = 'pan';
     }
 }
@@ -1283,15 +1373,17 @@ function onPointerUp(ev) {
                 state.selection.add(n.id);
             }
         }
+        updateMobileActions();
     }
 
     // Tek tık (hareketsiz) → çocuğu olan düğümlerde expand toggle
     if (ix.mode === 'drag' && !ix.moved && ix.pressNodeId) {
         const n = state.nodes.find(x => x.id === ix.pressNodeId);
-        if (n) {
+        if (n && !isMobileInteractionMode()) {
             const hasChildren = state.nodes.some(x => x.parentId === n.id);
             if (hasChildren) n.expanded = !n.expanded;
         }
+        updateMobileActions();
     }
     if (ix.mode === 'drag' && ix.moved) persist();
 
@@ -1389,6 +1481,7 @@ function duplicateNode(n) {
         createdAt: Date.now(), updatedAt: Date.now() };
     state.nodes.push(copy);
     state.selection.clear(); state.selection.add(copy.id);
+    updateMobileActions();
     requestRedraw(); persist();
 }
 
@@ -1398,6 +1491,7 @@ function openInspector(n) {
     if (!inspector) return;
     inspectorBoundId = n.id;
     inspector.hidden = false;
+    updateMobileActions();
     document.getElementById('cmInspTitle').value = n.title || '';
     document.getElementById('cmInspNote').value = n.note || '';
     const sel = document.getElementById('cmInspHybrid');
@@ -1410,12 +1504,13 @@ function openInspector(n) {
 function closeInspector() {
     inspectorBoundId = null;
     if (inspector) inspector.hidden = true;
+    updateMobileActions();
 }
 function bindInspector() {
     document.getElementById('casemapInspectorClose').onclick = closeInspector;
     document.getElementById('cmInspTitle').addEventListener('input', (e) => {
         const n = state.nodes.find(x => x.id === inspectorBoundId); if (!n) return;
-        n.title = e.target.value; n.updatedAt = Date.now(); requestRedraw(); persist();
+        n.title = e.target.value; n.updatedAt = Date.now(); updateMobileActions(); requestRedraw(); persist();
     });
     document.getElementById('cmInspNote').addEventListener('input', (e) => {
         const n = state.nodes.find(x => x.id === inspectorBoundId); if (!n) return;
@@ -1423,7 +1518,7 @@ function bindInspector() {
     });
     document.getElementById('cmInspHybrid').addEventListener('change', (e) => {
         const n = state.nodes.find(x => x.id === inspectorBoundId); if (!n) return;
-        pushUndo(); n.hybridKey = e.target.value; requestRedraw(); persist();
+        pushUndo(); n.hybridKey = e.target.value; updateMobileActions(); requestRedraw(); persist();
     });
     document.querySelectorAll('#cmInspStatus .cm-status-btn').forEach(b => {
         b.onclick = () => {
@@ -1431,7 +1526,7 @@ function bindInspector() {
             pushUndo(); n.status = b.dataset.status;
             document.querySelectorAll('#cmInspStatus .cm-status-btn').forEach(x =>
                 x.classList.toggle('active', x === b));
-            requestRedraw(); persist();
+            updateMobileActions(); requestRedraw(); persist();
         };
     });
     document.getElementById('cmInspDelete').onclick = () => {
@@ -1466,6 +1561,10 @@ function renderPalette() {
             ev.dataTransfer.effectAllowed = 'copy';
         });
         el.addEventListener('dblclick', () => spawnHybridAtCenter(h.key));
+        el.addEventListener('click', (e) => {
+            if (!isMobileInteractionMode() || e.target.closest('.cm-pal-add')) return;
+            spawnHybridAtCenter(h.key);
+        });
         el.querySelector('.cm-pal-add').onclick = (e) => {
             e.stopPropagation(); spawnHybridAtCenter(h.key);
         };
@@ -1743,6 +1842,7 @@ export function initializeCaseMap() {
     bindCanvasDnd();
     bindToolbar();
     bindInspector();
+    bindMobileActions();
     bindCrossWindowSync();
 
     canvas.addEventListener('wheel', onWheel, { passive: false });
