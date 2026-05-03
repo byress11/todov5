@@ -28,7 +28,7 @@
     <!-- Font Awesome for professional icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 
     <!-- Firebase SDK (defer: HTML parsing'i bloklamaz) -->
     <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -162,6 +162,9 @@
                     <input type="text" id="casemapSearch" class="cm-search" placeholder="Ara…">
                     <button class="cm-tool-btn cm-open-window-btn" data-action="open-casemap-window" title="Hibrit haritayı ayrı pencerede aç">
                         <i class="fas fa-up-right-from-square"></i>
+                    </button>
+                    <button type="button" class="cm-tool-btn" id="taskBlasterOpenBtn" title="Görev Avcısı — retro arcade (hibrit ve görev dalgası)">
+                        <i class="fas fa-plane-up"></i>
                     </button>
                     <span class="cm-tool-sep"></span>
                     <label class="cm-bright" title="Arka plan ışığı">
@@ -877,6 +880,71 @@
 
     <!-- Import File Input (Hidden) -->
     <input type="file" id="importFileInput" accept=".json" class="hidden">
+
+    <!-- Görev Avcısı — retro shooter -->
+    <div class="task-blaster-overlay" id="taskBlasterOverlay" hidden>
+        <div class="task-blaster-backdrop" aria-hidden="true"></div>
+        <div class="task-blaster-shell" role="dialog" aria-labelledby="taskBlasterTitle" aria-modal="true">
+            <header class="task-blaster-hud">
+                <h2 id="taskBlasterTitle" class="task-blaster-title">Görev Avcısı</h2>
+                <div class="task-blaster-hud-stats">
+                    <span class="tb-stat">SKOR <b id="tbHudScore">0</b></span>
+                    <span class="tb-stat">LVL <b id="tbHudLevel">1</b></span>
+                    <span class="tb-stat">DALGA <b id="tbHudWave">1</b></span>
+                    <span class="tb-stat">CAN <b id="tbHudLives">3</b></span>
+                    <span class="tb-stat">ZIRH <b id="tbHudArmor">0</b></span>
+                    <span class="tb-stat tb-weapon-stat">SILAH <b id="tbHudWeapon">BLASTER</b></span>
+                    <span class="tb-stat tb-inventory-stat">ENV <b id="tbHudInventory">N0 T1 D0 Z0</b></span>
+                    <span class="tb-boss" id="tbHudBoss" hidden>BOSS 0/0</span>
+                    <span class="tb-combo" id="tbHudCombo" hidden>x2 ZİNCİR</span>
+                </div>
+                <button type="button" class="task-blaster-close" id="taskBlasterCloseBtn" title="Kapat (Esc)">
+                    <i class="fas fa-times"></i>
+                </button>
+            </header>
+            <div class="task-blaster-crt">
+                <canvas id="taskBlasterCanvas" width="400" height="520"></canvas>
+                <div class="task-blaster-scanlines" aria-hidden="true"></div>
+                <div class="task-blaster-vignette" aria-hidden="true"></div>
+                <div class="task-blaster-level-banner" id="taskBlasterLevelBanner" hidden>
+                    <strong id="tbLevelBannerTitle">LEVEL 1</strong>
+                    <span id="tbLevelBannerSub">Başlangıç Alanı</span>
+                </div>
+            </div>
+            <footer class="task-blaster-help">
+                <kbd>WASD</kbd> / <kbd>Oklar</kbd> veya sürükle · <kbd>Boşluk</kbd> / basılı tut ateş · <kbd>P</kbd> duraklat
+                <span class="tb-help-tip">Ekipman: A zırh · S kalkan · B blaster · W üçlü atış · R roket · N nova · T tamir · D drone · Z zaman</span>
+                <span class="tb-help-tip">Envanter becerileri: <kbd>1</kbd> Nova · <kbd>2</kbd> Tamir · <kbd>3</kbd> Drone · <kbd>4</kbd> Zaman yavaşlat</span>
+            </footer>
+            <div class="task-blaster-start" id="taskBlasterStartPanel">
+                <p class="tb-lead">Olay haritandaki <strong>hibritler</strong> ve görev listendeki <strong>görevler</strong> canlı düşmanlara dönüşür. 5 leveli kır, sonsuz moda dayan.</p>
+                <div class="tb-loadout" aria-label="Başlangıç silahı">
+                    <button type="button" class="tb-loadout-card active" data-tb-weapon="blaster">
+                        <i class="fas fa-bolt"></i>
+                        <strong>Blaster</strong>
+                        <span>Hızlı atış</span>
+                    </button>
+                    <button type="button" class="tb-loadout-card" data-tb-weapon="spread">
+                        <i class="fas fa-fan"></i>
+                        <strong>Üçlü</strong>
+                        <span>Geniş yayılım</span>
+                    </button>
+                    <button type="button" class="tb-loadout-card" data-tb-weapon="rocket">
+                        <i class="fas fa-rocket"></i>
+                        <strong>Roket</strong>
+                        <span>Ağır hasar</span>
+                    </button>
+                </div>
+                <button type="button" class="tb-primary" id="taskBlasterStartBtn">Başla</button>
+            </div>
+            <div class="task-blaster-gameover" id="taskBlasterGameOver" hidden>
+                <h3>Elendin!</h3>
+                <p>Skor: <span id="tbFinalScore">0</span></p>
+                <p>Level: <span id="tbFinalLevel">1</span></p>
+                <button type="button" class="tb-primary" id="taskBlasterRestartBtn">Tekrar</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Main Application (Modular ES6) -->
     <script type="module" src="src/app.js"></script>
