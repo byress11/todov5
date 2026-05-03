@@ -6,6 +6,7 @@ import { initializeFirebaseAuth } from './modules/firebase-sync.js';
 import { initializeTheme } from './modules/theme.js';
 import { initializeWidgetControls, initializeTabs } from './modules/ui.js';
 import { initializeCaseMap } from './modules/casemap.js';
+import { initializeTaskBlasterGame } from './modules/task-blaster-game.js';
 import { initializePomodoro } from './modules/pomodoro.js';
 import { initializeFiles } from './modules/files.js';
 import { initializeNotes } from './modules/notes.js';
@@ -70,6 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initialize features
         initializeCaseMap();
         console.log('✅ Case Map (Olay Haritası) initialized');
+
+        initializeTaskBlasterGame();
+        console.log('✅ Görev Avcısı (retro oyun) initialized');
 
         initializePomodoro();
         console.log('✅ Pomodoro module initialized');
