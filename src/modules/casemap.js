@@ -66,7 +66,7 @@ const tilt = { x: 0, y: 0 };
 
 // ---------- Interaction state ----------
 const ix = {
-    mode: 'idle',           // idle | pan | drag | connect | marquee
+    mode: 'idle',           // idle | pan | drag | connect | marquee | pinch
     startX: 0, startY: 0,
     lastX: 0, lastY: 0,
     dragOffsets: null,      // Map<id, {dx,dy}>
@@ -74,6 +74,13 @@ const ix = {
     marqueeRect: null,
     pressNodeId: null,
     moved: false,
+};
+
+const touchPointers = new Map();
+const pinch = {
+    startDistance: 0,
+    startZoom: 1,
+    anchorWorld: null,
 };
 
 // ---------- Utils ----------
@@ -1182,10 +1189,57 @@ function addEdge(fromId, toId) {
 }
 
 // ---------- Pointer ----------
+function getCanvasPoint(ev) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+}
+
+function getPinchMetrics() {
+    const points = [...touchPointers.values()];
+    if (points.length < 2) return null;
+    const a = points[0];
+    const b = points[1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return {
+        distance: Math.hypot(dx, dy),
+        midX: (a.x + b.x) / 2,
+        midY: (a.y + b.y) / 2,
+    };
+}
+
+function beginPinchGesture() {
+    const metrics = getPinchMetrics();
+    if (!metrics || metrics.distance < 1) return false;
+    pinch.startDistance = metrics.distance;
+    pinch.startZoom = state.view.zoom;
+    pinch.anchorWorld = screenToWorld(metrics.midX, metrics.midY);
+    ix.mode = 'pinch';
+    ix.moved = true;
+    pendingPanDx = 0;
+    pendingPanDy = 0;
+    hideContextMenu();
+    return true;
+}
+
+function updatePinchGesture() {
+    if (ix.mode !== 'pinch') return false;
+    const metrics = getPinchMetrics();
+    if (!metrics || !pinch.anchorWorld || !pinch.startDistance) return false;
+
+    const newZ = clamp(pinch.startZoom * (metrics.distance / pinch.startDistance), 0.2, 3);
+    state.view.zoom = newZ;
+    state.view.x = metrics.midX - pinch.anchorWorld.x * newZ;
+    state.view.y = metrics.midY - pinch.anchorWorld.y * newZ;
+    requestRedraw();
+    persistViewSoon();
+    return true;
+}
+
 function onWheel(ev) {
     ev.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const point = getCanvasPoint(ev);
+    const mx = point.x, my = point.y;
     const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
     const oldZ = state.view.zoom;
     const newZ = clamp(oldZ * factor, 0.2, 3);
@@ -1199,9 +1253,18 @@ function onWheel(ev) {
 }
 
 function onPointerDown(ev) {
+    if (ev.pointerType === 'touch') {
+        touchPointers.set(ev.pointerId, getCanvasPoint(ev));
+        if (touchPointers.size >= 2 && beginPinchGesture()) {
+            canvas.setPointerCapture(ev.pointerId);
+            ev.preventDefault();
+            return;
+        }
+    }
+
     canvas.setPointerCapture(ev.pointerId);
-    const rect = canvas.getBoundingClientRect();
-    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    const point = getCanvasPoint(ev);
+    const sx = point.x, sy = point.y;
     ix.startX = ix.lastX = sx; ix.startY = ix.lastY = sy;
     ix.moved = false;
     pendingPanDx = 0;
@@ -1282,8 +1345,18 @@ let movePending = false;
 let pendingPanDx = 0;
 let pendingPanDy = 0;
 function onPointerMove(ev) {
-    const rect = canvas.getBoundingClientRect();
-    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    const point = getCanvasPoint(ev);
+
+    if (ev.pointerType === 'touch' && touchPointers.has(ev.pointerId)) {
+        touchPointers.set(ev.pointerId, point);
+        if (ix.mode === 'pinch') {
+            updatePinchGesture();
+            ev.preventDefault();
+            return;
+        }
+    }
+
+    const sx = point.x, sy = point.y;
     const dx = sx - ix.lastX;
     const dy = sy - ix.lastY;
     ix.lastX = sx; ix.lastY = sy;
@@ -1345,8 +1418,24 @@ function onPointerMove(ev) {
 
 function onPointerUp(ev) {
     try { canvas.releasePointerCapture(ev.pointerId); } catch (_) {}
-    const rect = canvas.getBoundingClientRect();
-    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    const point = getCanvasPoint(ev);
+    const sx = point.x, sy = point.y;
+
+    if (ev.pointerType === 'touch' && touchPointers.has(ev.pointerId)) {
+        touchPointers.delete(ev.pointerId);
+        if (ix.mode === 'pinch') {
+            if (touchPointers.size >= 2) {
+                beginPinchGesture();
+            } else {
+                pinch.anchorWorld = null;
+                pinch.startDistance = 0;
+                ix.mode = 'idle';
+                persistViewSoon();
+            }
+            ev.preventDefault();
+            return;
+        }
+    }
 
     if (ix.mode === 'pan') {
         if (pendingPanDx || pendingPanDy) {
