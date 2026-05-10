@@ -18,9 +18,22 @@ export function initializeWidgetControls() {
 
     header.addEventListener('mousedown', dragStart);
 
-    function dragStart(e) {
+    async function dragStart(e) {
         if (AppState.isLocked) return;
-        if (e.target.classList.contains('control-btn')) return;
+        if (e.target.closest('.widget-controls, button, input, select, textarea, label, a')) return;
+
+        if (window.isElectron && window.electronAPI?.getWindowBounds) {
+            const bounds = await window.electronAPI.getWindowBounds();
+            if (!bounds) return;
+            initialX = e.screenX - bounds.x;
+            initialY = e.screenY - bounds.y;
+            isDragging = true;
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+            e.preventDefault();
+            return;
+        }
+
         initialX = e.clientX - container.offsetLeft;
         initialY = e.clientY - container.offsetTop;
         isDragging = true;
@@ -31,6 +44,13 @@ export function initializeWidgetControls() {
     function drag(e) {
         if (!isDragging) return;
         e.preventDefault();
+        if (window.isElectron && window.electronAPI?.moveWindowTo) {
+            currentX = e.screenX - initialX;
+            currentY = e.screenY - initialY;
+            window.electronAPI.moveWindowTo(currentX, currentY);
+            return;
+        }
+
         currentX = e.clientX - initialX;
         currentY = e.clientY - initialY;
         container.style.position = 'fixed';

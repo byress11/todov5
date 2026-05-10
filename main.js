@@ -26,7 +26,6 @@ try {
 let mainWindow;
 let tray = null;
 let isAlwaysOnTop = false; // Default is off, will be loaded from config
-let browserView = null;
 // Multi-tab support
 const browserViews = new Map(); // tabId -> BrowserView
 const tabMetadata = new Map(); // tabId -> { url, title, favicon, discarded }
@@ -35,7 +34,6 @@ const tabLastActiveAt = new Map(); // tabId -> timestamp
 const TAB_IDLE_DISCARD_MS = 3 * 60 * 1000;
 const MAX_ACTIVE_BROWSER_VIEWS = 5;
 let activeTabId = null;
-let browserViewVisible = false;
 let browserTabsVisible = false;
 let caseMapWindow = null;
 
@@ -276,19 +274,84 @@ function clearTabIdleTimer(tabId) {
     }
 }
 
+// Sayfa Görünürlük (Page Visibility) sahteleme scripti.
+// BrowserView pencereden çıkarıldığında YouTube ve benzeri siteler
+// `visibilitychange` olayını dinleyip videoyu durdurur. Bu script bu
+// davranışı bastırır; sayfa daima "visible" olarak raporlanır.
+const VISIBILITY_SPOOF_SCRIPT = `
+(function() {
+    try {
+        Object.defineProperty(Document.prototype, 'hidden', {
+            configurable: true,
+            get: function () { return false; }
+        });
+        Object.defineProperty(Document.prototype, 'webkitHidden', {
+            configurable: true,
+            get: function () { return false; }
+        });
+        Object.defineProperty(Document.prototype, 'visibilityState', {
+            configurable: true,
+            get: function () { return 'visible'; }
+        });
+        Object.defineProperty(Document.prototype, 'webkitVisibilityState', {
+            configurable: true,
+            get: function () { return 'visible'; }
+        });
+
+        const blockedEvents = new Set(['visibilitychange', 'webkitvisibilitychange']);
+
+        const origAdd = EventTarget.prototype.addEventListener;
+        EventTarget.prototype.addEventListener = function (type, listener, options) {
+            if (typeof type === 'string' && blockedEvents.has(type.toLowerCase())) {
+                return;
+            }
+            return origAdd.call(this, type, listener, options);
+        };
+
+        ['onvisibilitychange', 'onwebkitvisibilitychange'].forEach(function (prop) {
+            try {
+                Object.defineProperty(Document.prototype, prop, {
+                    configurable: true,
+                    set: function () {},
+                    get: function () { return null; }
+                });
+            } catch (_) {}
+        });
+
+        document.dispatchEvent(new Event('visibilitychange'));
+    } catch (e) {
+        console.warn('[Visibility spoof] failed:', e);
+    }
+})();
+`;
+
 function createBrowserTabView(tabId, browserSession) {
     const newView = new BrowserView({
         webPreferences: {
             session: browserSession,
-            sandbox: true,
-            contextIsolation: true,
+            preload: path.join(__dirname, 'browser-preload.js'),
+            sandbox: false,
+            contextIsolation: false,
             nodeIntegration: false,
             javascript: true,
             scrollBounce: true,
             webSecurity: true,
             allowRunningInsecureContent: false,
-            backgroundThrottling: true
+            backgroundThrottling: false
         }
+    });
+
+    try {
+        newView.webContents.setBackgroundThrottling(false);
+    } catch (_) {}
+
+    const injectVisibilitySpoof = () => {
+        if (!newView.webContents || newView.webContents.isDestroyed()) return;
+        newView.webContents.executeJavaScript(VISIBILITY_SPOOF_SCRIPT, true).catch(() => {});
+    };
+    newView.webContents.on('dom-ready', injectVisibilitySpoof);
+    newView.webContents.on('did-frame-finish-load', (_e, isMainFrame) => {
+        if (isMainFrame) injectVisibilitySpoof();
     });
 
     newView.webContents.on('did-navigate', (e, navUrl) => {
@@ -331,13 +394,28 @@ function createBrowserTabView(tabId, browserSession) {
         }
     });
 
-    newView.webContents.setWindowOpenHandler(({ url }) => {
-        if (url.includes('accounts.google.com') || url.includes('consent.google.com')) {
-            const { shell } = require('electron');
-            shell.openExternal(url);
-            return { action: 'deny' };
+    // Popup/yeni-pencere isteklerini yeni sekmede ac (Gmail eki, OAuth vb.)
+    newView.webContents.setWindowOpenHandler(({ url, disposition }) => {
+        try {
+            if (!url || url === 'about:blank') return { action: 'deny' };
+
+            // about:blank veya javascript: gibi sahte URL'leri engelle
+            if (url.startsWith('javascript:') || url.startsWith('data:')) {
+                return { action: 'deny' };
+            }
+
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('browser-open-new-tab', { url });
+            }
+        } catch (e) {
+            console.error('window-open handler hatasi:', e);
         }
         return { action: 'deny' };
+    });
+
+    // Popup hala bir sekilde olusursa (eski API), onu da yakala
+    newView.webContents.on('did-create-window', (childWindow) => {
+        try { childWindow.close(); } catch (_) {}
     });
 
     return newView;
@@ -400,8 +478,8 @@ function createWindow() {
         y: null
     };
 
-    // Load lock mode preference from config (default: true - locked)
-    const isLocked = config.isLocked !== undefined ? config.isLocked : true;
+    // Load lock mode preference from config (default: unlocked)
+    const isLocked = config.isLocked !== undefined ? config.isLocked : false;
 
     // Load always on top preference from config (default: false - normal z-index)
     // Kilitli modda bile her zaman üstte DEĞİL
@@ -427,7 +505,7 @@ function createWindow() {
         frame: false, // Frameless window for custom UI
         transparent: true,
         resizable: !isLocked, // Kilitliyse boyutlandırılamaz
-        movable: !isLocked, // Kilitliyse taşınamaz
+        movable: true,
         hasShadow: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -443,7 +521,7 @@ function createWindow() {
             partition: 'persist:taskmaster'
         },
         icon: appIcon,
-        skipTaskbar: isLocked, // Kilitliyse görev çubuğunda görünmez
+        skipTaskbar: false,
         alwaysOnTop: isAlwaysOnTop, // Use saved preference
         backgroundColor: '#00000000', // Transparent background
         roundedCorners: true,
@@ -470,6 +548,43 @@ function createWindow() {
             screenHeight - windowHeight - margin
         );
     }
+
+    // ==================== TANI KÖPRÜLERİ (renderer hatalarını terminale yansıt) ====================
+    // Renderer console mesajlarını terminale yaz (uyari/hata/log).
+    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+        const levels = ['LOG', 'WARN', 'ERROR', 'INFO'];
+        const tag = levels[level] || `L${level}`;
+        const where = sourceId ? `${sourceId}:${line}` : '';
+        // Sadece WARN ve ERROR'u oncelikle goster, LOG cok gurultulu olabilir
+        if (level >= 1) {
+            console.log(`[RENDERER ${tag}] ${message} ${where}`);
+        }
+    });
+
+    mainWindow.webContents.on('render-process-gone', (event, details) => {
+        console.error('[RENDERER CRASH]', details);
+    });
+
+    mainWindow.webContents.on('unresponsive', () => {
+        console.warn('[RENDERER UNRESPONSIVE] Renderer process yanit vermiyor');
+    });
+
+    mainWindow.webContents.on('responsive', () => {
+        console.log('[RENDERER RESPONSIVE] Renderer tekrar yanit veriyor');
+    });
+
+    mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
+        console.error('[PRELOAD ERROR]', preloadPath, error);
+    });
+
+    // Tum yakalanmamis hatalari main process'te log'la
+    process.on('uncaughtException', (err) => {
+        console.error('[MAIN uncaughtException]', err);
+    });
+    process.on('unhandledRejection', (reason) => {
+        console.error('[MAIN unhandledRejection]', reason);
+    });
+    // ==============================================================================================
 
     // Load the app
     mainWindow.loadFile('index.html');
@@ -609,98 +724,7 @@ function createCaseMapWindow() {
     return true;
 }
 
-function ensureBrowserView() {
-    if (!mainWindow || mainWindow.isDestroyed()) return null;
-    if (!browserView) {
-        // Kalici session olustur
-        const browserSession = session.fromPartition('persist:browser');
-
-        browserView = new BrowserView({
-            webPreferences: {
-                session: browserSession,
-                sandbox: true,
-                contextIsolation: true,
-                nodeIntegration: false,
-                javascript: true,
-                scrollBounce: true,
-                // Google login için gerekli ayarlar
-                webSecurity: true,
-                allowRunningInsecureContent: false
-            }
-        });
-
-        // Google login için gerçek Chrome User-Agent kullan
-        const chromeUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-        browserView.webContents.setUserAgent(chromeUA);
-
-        // Google login için gerekli izinleri ayarla
-        browserSession.setPermissionRequestHandler((webContents, permission, callback) => {
-            // Tüm izinlere izin ver (güvenli siteler için)
-            callback(true);
-        });
-
-        // Google login için yeni pencere açmaya izin ver
-        browserView.webContents.setWindowOpenHandler(({ url }) => {
-            // Google hesap girişi için izin ver
-            if (url.includes('accounts.google.com') ||
-                url.includes('google.com/signin') ||
-                url.includes('oauth') ||
-                url.includes('consent.google.com')) {
-                // Harici tarayıcıda aç (daha güvenli)
-                const { shell } = require('electron');
-                shell.openExternal(url);
-                return { action: 'deny' };
-            }
-            // Diğer pop-up'ları engelle
-            return { action: 'deny' };
-        });
-
-        // BrowserView focus
-        browserView.webContents.on('dom-ready', () => {
-            browserView.webContents.focus();
-
-            const currentUrl = browserView.webContents.getURL();
-
-            // YouTube reklam engelleme ve sponsor atlama script injection
-            if (currentUrl.includes('youtube.com')) {
-                injectYouTubeAdBlocker(browserView.webContents);
-            }
-        });
-
-        browserView.webContents.on('did-finish-load', () => {
-            const currentUrl = browserView.webContents.getURL();
-
-            if (currentUrl.includes('youtube.com')) {
-                injectYouTubeAdBlocker(browserView.webContents);
-            }
-        });
-
-        // URL degistiginde renderer'a bildir
-        browserView.webContents.on('did-navigate', (event, url) => {
-            mainWindow.webContents.send('browser-url-changed', url);
-        });
-
-        browserView.webContents.on('did-navigate-in-page', (event, url) => {
-            mainWindow.webContents.send('browser-url-changed', url);
-        });
-
-        // Yeni pencere açılmasını engelle, ancak Google Login popup'larına izin ver
-        browserView.webContents.setWindowOpenHandler(({ url }) => {
-            if (url.includes('accounts.google.com') ||
-                url.includes('google.com/signin') ||
-                url.includes('oauth') ||
-                url.includes('openid')) {
-                return { action: 'allow' };
-            }
-            if (url.startsWith('https:')) {
-                browserView.webContents.loadURL(url);
-            }
-            return { action: 'deny' };
-        });
-    }
-    mainWindow.setBrowserView(browserView);
-    return browserView;
-}
+// ensureBrowserView kaldırıldı — sadece multi-tab sistemi kullanılıyor
 
 function createTray() {
     try {
@@ -944,138 +968,61 @@ ipcMain.handle('open-google-login', (event, returnUrl) => {
     return true;
 });
 
-// Browser view ac
-ipcMain.handle('browser-view-open', (event, payload) => {
-    const { url, bounds } = payload || {};
-    if (!url) return false;
+// ==================== BROWSER CACHE TEMIZLEME ====================
 
-    const view = ensureBrowserView();
-    if (!view) return false;
-    browserViewVisible = true;
-
-    if (bounds && typeof bounds.width === 'number' && typeof bounds.height === 'number') {
-        view.setBounds({
-            x: Math.max(0, Math.round(bounds.x)),
-            y: Math.max(0, Math.round(bounds.y)),
-            width: Math.max(1, Math.round(bounds.width)),
-            height: Math.max(1, Math.round(bounds.height))
+// Geçmişi (Cache + Cookies + Storage + History) tamamen temizle
+ipcMain.handle('browser-clear-history', async () => {
+    try {
+        const browserSession = session.fromPartition('persist:browser');
+        await browserSession.clearCache();
+        await browserSession.clearStorageData({
+            storages: [
+                'cookies',
+                'filesystem',
+                'indexdb',
+                'localstorage',
+                'shadercache',
+                'websql',
+                'serviceworkers',
+                'cachestorage'
+            ]
         });
-    }
-
-    view.webContents.loadURL(url);
-
-    view.webContents.once('did-finish-load', () => {
-        view.webContents.focus();
-    });
-
-    return true;
-});
-
-// Browser bounds guncelle
-ipcMain.handle('browser-view-update-bounds', (event, bounds) => {
-    if (!browserView || !browserViewVisible) return false;
-    if (!bounds || typeof bounds.width !== 'number' || typeof bounds.height !== 'number') return false;
-    browserView.setBounds({
-        x: Math.max(0, Math.round(bounds.x)),
-        y: Math.max(0, Math.round(bounds.y)),
-        width: Math.max(1, Math.round(bounds.width)),
-        height: Math.max(1, Math.round(bounds.height))
-    });
-    return true;
-});
-
-// Browser gizle
-ipcMain.handle('browser-view-hide', () => {
-    if (!browserView || !mainWindow || mainWindow.isDestroyed()) return false;
-    mainWindow.removeBrowserView(browserView);
-    browserView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-    browserViewVisible = false;
-    return true;
-});
-
-// Browser goster
-ipcMain.handle('browser-view-show', (event, bounds) => {
-    if (!browserView || !mainWindow || mainWindow.isDestroyed()) return false;
-    mainWindow.setBrowserView(browserView);
-    browserViewVisible = true;
-    if (bounds) {
-        browserView.setBounds({
-            x: Math.round(bounds.x),
-            y: Math.round(bounds.y),
-            width: Math.round(bounds.width),
-            height: Math.round(bounds.height)
+        await browserSession.clearAuthCache();
+        if (typeof browserSession.clearHostResolverCache === 'function') {
+            await browserSession.clearHostResolverCache();
+        }
+        // Aktif sekmelerdeki geçmişi de sıfırla
+        browserViews.forEach((view) => {
+            try {
+                if (view.webContents && !view.webContents.isDestroyed()) {
+                    view.webContents.clearHistory();
+                }
+            } catch (_) {}
         });
+        console.log('[Browser] Geçmiş tamamen temizlendi');
+        return { success: true };
+    } catch (error) {
+        console.error('[Browser] Geçmiş temizleme hatası:', error);
+        return { success: false, error: error.message };
     }
-    browserView.webContents.focus();
-    return true;
 });
 
-// Geri git
-ipcMain.handle('browser-go-back', () => {
-    if (!browserView) return false;
-    if (browserView.webContents.canGoBack()) {
-        browserView.webContents.goBack();
-        return true;
+ipcMain.handle('browser-clear-cache', async () => {
+    try {
+        const browserSession = session.fromPartition('persist:browser');
+        await browserSession.clearCache();
+        await browserSession.clearStorageData({
+            storages: ['cachestorage', 'serviceworkers']
+        });
+        console.log('[Browser] Cache temizlendi');
+        return { success: true };
+    } catch (error) {
+        console.error('[Browser] Cache temizleme hatası:', error);
+        return { success: false, error: error.message };
     }
-    return false;
 });
 
-// Ileri git
-ipcMain.handle('browser-go-forward', () => {
-    if (!browserView) return false;
-    if (browserView.webContents.canGoForward()) {
-        browserView.webContents.goForward();
-        return true;
-    }
-    return false;
-});
-
-// Yenile
-ipcMain.handle('browser-refresh', () => {
-    if (!browserView) return false;
-    browserView.webContents.reload();
-    return true;
-});
-
-// Zoom In
-ipcMain.handle('browser-zoom-in', () => {
-    if (!browserView) return 1;
-    const currentZoom = browserView.webContents.getZoomFactor();
-    const newZoom = Math.min(3, currentZoom + 0.1);
-    browserView.webContents.setZoomFactor(newZoom);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('browser-zoom-changed', Math.round(newZoom * 100));
-    }
-    return Math.round(newZoom * 100);
-});
-
-// Zoom Out
-ipcMain.handle('browser-zoom-out', () => {
-    if (!browserView) return 1;
-    const currentZoom = browserView.webContents.getZoomFactor();
-    const newZoom = Math.max(0.25, currentZoom - 0.1);
-    browserView.webContents.setZoomFactor(newZoom);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('browser-zoom-changed', Math.round(newZoom * 100));
-    }
-    return Math.round(newZoom * 100);
-});
-
-// Zoom Reset
-ipcMain.handle('browser-zoom-reset', () => {
-    if (!browserView) return 100;
-    browserView.webContents.setZoomFactor(1);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('browser-zoom-changed', 100);
-    }
-    return 100;
-});
-
-// Get Zoom Level
-ipcMain.handle('browser-get-zoom-level', () => {
-    if (!browserView) return 100;
-    return Math.round(browserView.webContents.getZoomFactor() * 100);
-});
+// Eski tek-sekme browser IPC handler'lari kaldirildi — sadece multi-tab sistemi kullaniliyor
 
 // ==================== BROWSER TABS IPC HANDLERS ====================
 
@@ -1207,20 +1154,26 @@ ipcMain.handle('browser-tab-navigate', (event, payload) => {
 ipcMain.handle('browser-hide-all-tabs', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-    if (browserView) {
-        mainWindow.removeBrowserView(browserView);
-        browserView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-        browserViewVisible = false;
-    }
-
-    browserViews.forEach((view, tabId) => {
-        mainWindow.removeBrowserView(view);
-        if (view.webContents && !view.webContents.isDestroyed()) {
-            view.webContents.setAudioMuted(true);
-            scheduleTabIdleDiscard(tabId);
+    // Tüm BrowserView'ları kaldır
+    if (activeTabId) {
+        const view = browserViews.get(activeTabId);
+        if (view) {
+            try {
+                const currentBounds = typeof view.getBounds === 'function' ? view.getBounds() : null;
+                view.setBounds({
+                    x: -32000,
+                    y: -32000,
+                    width: Math.max(1, Math.round(currentBounds?.width || 800)),
+                    height: Math.max(1, Math.round(currentBounds?.height || 600))
+                });
+                if (view.webContents && !view.webContents.isDestroyed()) {
+                    view.webContents.setAudioMuted(false);
+                }
+            } catch (err) {
+                console.error(`Tab ${activeTabId} hide error:`, err.message);
+            }
         }
-    });
-    activeTabId = null;
+    }
     browserTabsVisible = false;
     return true;
 });
@@ -1550,7 +1503,7 @@ ipcMain.handle('delete-file', async (event, filePath) => {
     try {
         const stats = fs.statSync(filePath);
         if (stats.isDirectory()) {
-            fs.rmdirSync(filePath, { recursive: true });
+            fs.rmSync(filePath, { recursive: true, force: true });
         } else {
             fs.unlinkSync(filePath);
         }
@@ -1703,10 +1656,43 @@ ipcMain.on('ondragstart', (event, filePath) => {
     }
 });
 
+// Opacity IPC: degisken aynıysa veya kisa surede tekrar geliyorsa atla.
+// transparan + frameless pencerede setOpacity her cagrida DWM compositing
+// tetikler; spam edildiginde renderer yaniti gecikiyor (kasilma/cokme).
+let lastOpacityApplied = null;
+let opacityTimer = null;
 ipcMain.on('set-opacity', (event, opacity) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        const validOpacity = Math.max(0.1, Math.min(1, opacity / 100));
-        mainWindow.setOpacity(validOpacity);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const validOpacity = Math.max(0.1, Math.min(1, opacity / 100));
+    if (lastOpacityApplied === validOpacity) return;
+    if (opacityTimer) clearTimeout(opacityTimer);
+    opacityTimer = setTimeout(() => {
+        opacityTimer = null;
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        try {
+            mainWindow.setOpacity(validOpacity);
+            lastOpacityApplied = validOpacity;
+        } catch (err) {
+            console.warn('[setOpacity] hata:', err.message);
+        }
+    }, 16);
+});
+
+ipcMain.handle('get-window-bounds', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return null;
+    return mainWindow.getBounds();
+});
+
+ipcMain.on('move-window-to', (event, position) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const x = Math.round(Number(position?.x));
+    const y = Math.round(Number(position?.y));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    try {
+        mainWindow.setPosition(x, y, false);
+    } catch (err) {
+        console.warn('[moveWindowTo] hata:', err.message);
     }
 });
 
@@ -1718,8 +1704,8 @@ ipcMain.on('set-lock-mode', (event, locked) => {
             // Kilitli mod: boyutlandırma, taşıma kapalı, görev çubuğunda görünmez
             // Her zaman üstte DEĞİL - normal pencere gibi davranır
             mainWindow.setResizable(false);
-            mainWindow.setMovable(false);
-            mainWindow.setSkipTaskbar(true);
+            mainWindow.setMovable(true);
+            mainWindow.setSkipTaskbar(false);
             mainWindow.setAlwaysOnTop(false); // Normal z-index
             isAlwaysOnTop = false;
         } else {
@@ -1745,10 +1731,27 @@ ipcMain.on('set-lock-mode', (event, locked) => {
 });
 
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     // Sadece browser partition'i icin User-Agent ve header override
     const browserSession = session.fromPartition('persist:browser');
-    browserSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+    browserSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+
+    // Başlangıçta eski cache'leri temizle (sorunlu oturumları önler)
+    try {
+        await browserSession.clearCache();
+        await browserSession.clearStorageData({
+            storages: ['cachestorage', 'serviceworkers']
+        });
+        console.log('[Browser] Başlangıç cache temizliği tamamlandı');
+    } catch (err) {
+        console.error('[Browser] Cache temizleme hatası:', err.message);
+    }
+
+    // Google Login icin izin ayarlari
+    browserSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        callback(true);
+    });
+
     browserSession.webRequest.onHeadersReceived({
         urls: ['http://*/*', 'https://*/*'],
         types: ['mainFrame', 'subFrame']
@@ -1757,6 +1760,27 @@ app.whenReady().then(() => {
         delete responseHeaders['x-frame-options'];
         delete responseHeaders['X-Frame-Options'];
         callback({ responseHeaders });
+    });
+
+    // GIDEN istek basliklarini Chrome 131 ile birebir ayarla (Google bot tespiti).
+    browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
+        const requestHeaders = { ...details.requestHeaders };
+
+        // Electron izlerini sil
+        delete requestHeaders['Electron'];
+        delete requestHeaders['electron'];
+
+        // User-Agent: Eger Electron string'i icerirse temizle
+        if (requestHeaders['User-Agent'] && /Electron/i.test(requestHeaders['User-Agent'])) {
+            requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+        }
+
+        // Client Hints (sec-ch-ua) - Google ve Cloudflare bunu kontrol eder
+        requestHeaders['sec-ch-ua'] = '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"';
+        requestHeaders['sec-ch-ua-mobile'] = '?0';
+        requestHeaders['sec-ch-ua-platform'] = '"Windows"';
+
+        callback({ requestHeaders });
     });
 
     createWindow();

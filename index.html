@@ -81,14 +81,14 @@
     </div>
     <div class="widget-container widget-locked" id="widgetContainer">
         <!-- Resize Handles (hidden when locked) -->
-        <div class="resize-handle resize-top" data-direction="top" class="hidden"></div>
-        <div class="resize-handle resize-right" data-direction="right" class="hidden"></div>
-        <div class="resize-handle resize-bottom" data-direction="bottom" class="hidden"></div>
-        <div class="resize-handle resize-left" data-direction="left" class="hidden"></div>
-        <div class="resize-handle resize-top-left" data-direction="top-left" class="hidden"></div>
-        <div class="resize-handle resize-top-right" data-direction="top-right" class="hidden"></div>
-        <div class="resize-handle resize-bottom-left" data-direction="bottom-left" class="hidden"></div>
-        <div class="resize-handle resize-bottom-right" data-direction="bottom-right" class="hidden"></div>
+        <div class="resize-handle resize-top hidden" data-direction="top"></div>
+        <div class="resize-handle resize-right hidden" data-direction="right"></div>
+        <div class="resize-handle resize-bottom hidden" data-direction="bottom"></div>
+        <div class="resize-handle resize-left hidden" data-direction="left"></div>
+        <div class="resize-handle resize-top-left hidden" data-direction="top-left"></div>
+        <div class="resize-handle resize-top-right hidden" data-direction="top-right"></div>
+        <div class="resize-handle resize-bottom-left hidden" data-direction="bottom-left"></div>
+        <div class="resize-handle resize-bottom-right hidden" data-direction="bottom-right"></div>
 
         <!-- Header -->
         <div class="widget-header" id="widgetHeader">
@@ -206,7 +206,7 @@
                     <div class="casemap-empty-hint" id="casemapEmptyHint">
                         <i class="fas fa-diagram-project"></i>
                         <p>Haritaya başlamak için soldaki <b>hibritlerden</b> birini sürükle veya çift tıkla.</p>
-                        <p class="cm-keys"><kbd>Tekerlek</kbd> zoom · <kbd>Sürükle</kbd> pan · <kbd>Çift tık</kbd> düzenle · <kbd>Sağ tık</kbd> menü</p>
+                        <p class="cm-keys"><kbd>Tekerlek</kbd> zoom · <kbd>Sürükle</kbd> pan · <kbd>Çift tık</kbd> alt iş · <kbd>Sağ tık</kbd> menü</p>
                     </div>
                 </div>
             </div>
@@ -485,6 +485,24 @@
                                 <button id="browserGoBtn" class="browser-go-btn" title="Git">
                                     <i class="fas fa-arrow-right"></i>
                                 </button>
+                            </div>
+                            <button id="browserBookmarkBtn" class="browser-nav-btn" title="Yer İmlerine Ekle">
+                                <i class="far fa-star"></i>
+                            </button>
+                            <button id="browserBookmarksToggleBtn" class="browser-nav-btn" title="Yer İmlerini Göster/Gizle">
+                                <i class="fas fa-book-bookmark"></i>
+                            </button>
+                            <button id="browserClearHistoryBtn" class="browser-nav-btn" title="Geçmişi Temizle">
+                                <i class="fas fa-broom"></i>
+                            </button>
+                        </div>
+
+                        <!-- Bookmarks Bar -->
+                        <div class="browser-bookmarks-bar" id="browserBookmarksBar">
+                            <div class="browser-bookmarks-list" id="browserBookmarksList">
+                                <span class="browser-bookmarks-empty" id="browserBookmarksEmpty">
+                                    <i class="far fa-star"></i> Henüz yer imi yok. Bir sayfayı açıp yıldız simgesine tıklayarak ekleyebilirsiniz.
+                                </span>
                             </div>
                         </div>
 

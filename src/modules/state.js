@@ -32,7 +32,7 @@ export const AppState = {
     isDarkTheme: localStorage.getItem('theme') === 'light' ? false : true,
     
     // Settings
-    isLocked: localStorage.getItem('isLocked') === null ? true : localStorage.getItem('isLocked') === 'true',
+    isLocked: localStorage.getItem('isLocked') === null ? false : localStorage.getItem('isLocked') === 'true',
     currentPalette: localStorage.getItem('palette') || 'indigo',
     currentOpacity: parseInt(localStorage.getItem('opacity') || '100'),
     soundEnabled: localStorage.getItem('soundEnabled') !== 'false',

@@ -303,6 +303,7 @@ body.light-theme .widget-container {
     cursor: move;
     border-bottom: 1px solid rgba(var(--secondary-rgb), 0.18);
     box-shadow: inset 0 -1px 0 rgba(15, 23, 42, 0.35);
+    -webkit-app-region: no-drag;
 }
 
 .widget-title {
@@ -338,6 +339,7 @@ body.light-theme .widget-container {
 .widget-controls {
     display: flex;
     gap: 8px;
+    -webkit-app-region: no-drag;
 }
 
 .control-btn {
@@ -353,6 +355,7 @@ body.light-theme .widget-container {
     justify-content: center;
     color: white;
     font-size: 14px;
+    -webkit-app-region: no-drag;
 }
 
 .control-btn:hover {
@@ -4472,6 +4475,17 @@ textarea.task-input-field {
     z-index: 100000;
     display: flex;
     flex-direction: column;
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+}
+
+.settings-panel *,
+.settings-panel input,
+.settings-panel button,
+.settings-panel label,
+.settings-panel select,
+.settings-panel textarea {
+    -webkit-app-region: no-drag;
 }
 
 .settings-panel.active {
@@ -4635,6 +4649,18 @@ textarea.task-input-field {
 }
 
 /* Color Palette Variables */
+/* Palet degisimi sirasinda tum transition/animation'lari iptal et.
+   Aksi takdirde "transition: all" olan onlarca element ayni anda
+   animate olmaya calisip transparan pencerede compositor kasiyor. */
+body.palette-switching,
+body.palette-switching *,
+body.palette-switching *::before,
+body.palette-switching *::after {
+    transition: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+}
+
 body[data-palette="indigo"] {
     --primary-color: #6366f1;
     --primary-dark: #4f46e5;
@@ -6006,6 +6032,121 @@ body.no-animations * {
     min-height: 150px;
     border-radius: var(--radius-md);
     overflow: hidden;
+}
+
+/* ==================== YER İMLERİ ÇUBUĞU ==================== */
+.browser-nav-btn.active {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.4);
+}
+
+.browser-bookmarks-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    overflow-y: hidden;
+    min-height: 36px;
+    scrollbar-width: thin;
+}
+
+.browser-bookmarks-bar::-webkit-scrollbar {
+    height: 4px;
+}
+
+.browser-bookmarks-bar::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 2px;
+}
+
+.browser-bookmarks-list {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+
+.browser-bookmarks-empty {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    white-space: nowrap;
+}
+
+.browser-bookmark-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 180px;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.browser-bookmark-item:hover {
+    background: var(--bg-hover);
+    border-color: var(--primary-color);
+}
+
+.browser-bookmark-favicon {
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.browser-bookmark-favicon img {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+}
+
+.browser-bookmark-favicon i {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.browser-bookmark-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 130px;
+}
+
+.browser-bookmark-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease;
+    font-size: 10px;
+}
+
+.browser-bookmark-item:hover .browser-bookmark-remove {
+    opacity: 1;
+}
+
+.browser-bookmark-remove:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
 }
 
 .browser-placeholder {

@@ -34,7 +34,6 @@ const STATUS_LABELS = {
 const HYBRID_R     = 64;   // gezegen
 const SUB_R        = 32;   // uydu
 const ORBIT_GAP    = 80;   // yörünge yarıçapı = HYBRID_R + ORBIT_GAP
-const ADD_BTN_OFF  = 18;   // hibritin altında "+" butonu offset
 const ELLIPSE_RAT  = 0.42; // 3D yörünge eliptik yamulma (1 = düz daire, <1 = yandan görüş)
 
 // ---------- State ----------
@@ -45,7 +44,6 @@ const state = {
     selection: new Set(),
     hovered: null,
     hoveredHandle: null,
-    hoveredAddBtn: null,
     searchTerm: '',
 };
 let hybrids = [];
@@ -60,6 +58,12 @@ let syncChannel = null;
 // ---------- DOM refs ----------
 let canvas, ctx, root, palette, paletteList, toolbar, inspector, ctxMenu, emptyHint, zoomIndicator, searchInput, mobileActions;
 let dpr = 1, cssW = 0, cssH = 0;
+let isViewInteracting = false;
+let viewInteractionTimer = null;
+let wheelZoomFrame = null;
+let pendingWheelDelta = 0;
+let lastWheelPoint = null;
+let lastTap = { key: '', time: 0, x: 0, y: 0 };
 
 // 2.5D parallax tilt — kaldırıldı (drag/zoom sırasında konumlandırma hissini bozuyordu)
 const tilt = { x: 0, y: 0 };
@@ -96,6 +100,24 @@ function debounce(fn, ms) {
 }
 
 const persistViewSoon = debounce(() => persist(), 180);
+
+function markViewInteraction() {
+    isViewInteracting = true;
+    clearTimeout(viewInteractionTimer);
+    viewInteractionTimer = setTimeout(() => {
+        isViewInteracting = false;
+        requestRedraw();
+    }, 140);
+}
+
+function isDoubleTap(key, x, y, ms = 380, dist = 28) {
+    const now = Date.now();
+    const sameTarget = lastTap.key === key;
+    const closeEnough = Math.hypot(x - lastTap.x, y - lastTap.y) <= dist;
+    const fastEnough = now - lastTap.time <= ms;
+    lastTap = { key, time: now, x, y };
+    return sameTarget && closeEnough && fastEnough;
+}
 
 function cloneJson(value) {
     return JSON.parse(JSON.stringify(value));
@@ -366,7 +388,7 @@ function updateMobileActions() {
         </div>
         <div class="cm-mobile-buttons">
             <button type="button" data-mobile-action="edit" title="Duzenle"><i class="fas fa-pen"></i><span>Duzenle</span></button>
-            <button type="button" data-mobile-action="add" title="Alt is ekle"><i class="fas fa-circle-plus"></i><span>Alt is</span></button>
+            <button type="button" data-mobile-action="add" title="Cift dokunarak alt is ekle"><i class="fas fa-circle-plus"></i><span>Alt is</span></button>
             <button type="button" data-mobile-action="status" title="Durum degistir"><i class="fas fa-circle-half-stroke"></i><span>Durum</span></button>
             ${hasChildren ? `<button type="button" data-mobile-action="toggle" title="Goster/Gizle"><i class="fas ${n.expanded ? 'fa-eye-slash' : 'fa-eye'}"></i><span>${n.expanded ? 'Gizle' : 'Goster'}</span></button>` : ''}
             <button type="button" data-mobile-action="duplicate" title="Kopyala"><i class="fas fa-copy"></i><span>Kopyala</span></button>
@@ -393,7 +415,7 @@ function bindMobileActions() {
         if (action === 'edit') {
             openInspector(n);
         } else if (action === 'add') {
-            addSatellite(n);
+            return;
         } else if (action === 'toggle') {
             n.expanded = !n.expanded;
             requestRedraw();
@@ -412,6 +434,29 @@ function bindMobileActions() {
             persist();
         }
         updateMobileActions();
+    });
+
+    mobileActions.addEventListener('dblclick', (ev) => {
+        const btn = ev.target.closest('[data-mobile-action="add"]');
+        if (!btn) return;
+        const n = getSingleSelectedNode();
+        if (!n) return;
+        ev.preventDefault();
+        addSatellite(n);
+        updateMobileActions();
+    });
+
+    mobileActions.addEventListener('pointerup', (ev) => {
+        if (ev.pointerType !== 'touch') return;
+        const btn = ev.target.closest('[data-mobile-action="add"]');
+        if (!btn) return;
+        const n = getSingleSelectedNode();
+        if (!n) return;
+        if (isDoubleTap(`mobile-add:${n.id}`, ev.clientX, ev.clientY)) {
+            ev.preventDefault();
+            addSatellite(n);
+            updateMobileActions();
+        }
     });
 
     window.addEventListener('resize', updateMobileActions);
@@ -435,22 +480,7 @@ function nodeAtWorld(wx, wy) {
     return null;
 }
 
-// + ekle butonu (her düğümün altında alt iş eklemek için)
-function addBtnAtScreen(sx, sy) {
-    for (let i = state.nodes.length - 1; i >= 0; i--) {
-        const n = state.nodes[i];
-        if (isNodeHidden(n)) continue;
-        // Yalnızca hover/seçili düğüm için + görünür → yalnızca onu test et
-        if (!isMobileInteractionMode() && state.hoveredAddBtn !== n.id && state.hovered !== n.id && !state.selection.has(n.id)) continue;
-        const p = worldToScreen(n.cx, n.cy + n.r + ADD_BTN_OFF);
-        const dx = sx - p.x, dy = sy - p.y;
-        const hitR = isMobileInteractionMode() ? 19 : 11;
-        if (dx * dx + dy * dy <= hitR * hitR) return n;
-    }
-    return null;
-}
-
-// Bağlantı kulpu — düğümün dış halkasında, fareye bakan yön
+// Baglanti kulpu - dugumun dis halkasinda, fareye bakan yon
 function handleAtScreen(sx, sy) {
     for (let i = state.nodes.length - 1; i >= 0; i--) {
         const n = state.nodes[i];
@@ -730,7 +760,48 @@ function drawUnifiedVignette(w, h, b) {
     ctx.fillRect(0, 0, w, h);
 }
 
+function drawInteractiveBackground() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const b = clamp(state.view.brightness || 0, 0, 1);
+
+    drawUnifiedSpaceBase(w, h, b);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    drawWorldStarLayer({
+        step: 120,
+        density: 0.24,
+        radius: 0.58,
+        minRadius: 0.34,
+        maxRadius: 1.15,
+        alpha: 0.30,
+        glow: 0,
+        color: '186, 230, 253',
+        warmColor: '221, 214, 254',
+        seed: 3107,
+    }, b);
+    drawWorldStarLayer({
+        step: 290,
+        density: 0.16,
+        radius: 1.08,
+        minRadius: 0.62,
+        maxRadius: 2.10,
+        alpha: 0.48,
+        glow: 2.4,
+        color: '226, 246, 255',
+        warmColor: '244, 214, 255',
+        seed: 2441,
+    }, b);
+    ctx.restore();
+    drawUnifiedVignette(w, h, b);
+}
+
 function drawBackground() {
+    if (isViewInteracting) {
+        drawInteractiveBackground();
+        return;
+    }
+
     const w = canvas.width;
     const h = canvas.height;
     const b = clamp(state.view.brightness || 0, 0, 1);
@@ -1019,18 +1090,6 @@ function drawNode(n) {
             ctx.fillText(n.expanded ? '▾' : '▸', n.cx, n.cy + r - 6);
         }
 
-        const showAddBtn = state.hoveredAddBtn === n.id || state.hovered === n.id || selected;
-        if (showAddBtn) {
-            const bx = n.cx, by = n.cy + r + ADD_BTN_OFF;
-            ctx.fillStyle = h.color;
-            ctx.beginPath(); ctx.arc(bx, by, 11, 0, Math.PI * 2); ctx.fill();
-            ctx.lineWidth = 2 / state.view.zoom;
-            ctx.strokeStyle = isDark ? '#0b1020' : '#fff';
-            ctx.stroke();
-            ctx.fillStyle = '#fff';
-            ctx.font = `900 14px Inter, sans-serif`;
-            ctx.fillText('+', bx, by + 1);
-        }
     } else {
         ctx.fillStyle = '#ffffff';
         ctx.shadowColor = 'rgba(0,0,0,0.7)';
@@ -1053,18 +1112,6 @@ function drawNode(n) {
         }
 
         // Hover/seçim → "+" alt iş ekleme butonu (uydulara da)
-        const showAddBtn = state.hoveredAddBtn === n.id || state.hovered === n.id || selected;
-        if (showAddBtn) {
-            const bx = n.cx, by = n.cy + r + ADD_BTN_OFF;
-            ctx.fillStyle = h.color;
-            ctx.beginPath(); ctx.arc(bx, by, 10, 0, Math.PI * 2); ctx.fill();
-            ctx.lineWidth = 2 / state.view.zoom;
-            ctx.strokeStyle = isDark ? '#0b1020' : '#fff';
-            ctx.stroke();
-            ctx.fillStyle = '#fff';
-            ctx.font = `900 13px Inter, sans-serif`;
-            ctx.fillText('+', bx, by + 1);
-        }
     }
 
     ctx.restore();
@@ -1227,6 +1274,7 @@ function updatePinchGesture() {
     const metrics = getPinchMetrics();
     if (!metrics || !pinch.anchorWorld || !pinch.startDistance) return false;
 
+    markViewInteraction();
     const newZ = clamp(pinch.startZoom * (metrics.distance / pinch.startDistance), 0.2, 3);
     state.view.zoom = newZ;
     state.view.x = metrics.midX - pinch.anchorWorld.x * newZ;
@@ -1236,20 +1284,39 @@ function updatePinchGesture() {
     return true;
 }
 
-function onWheel(ev) {
-    ev.preventDefault();
-    const point = getCanvasPoint(ev);
-    const mx = point.x, my = point.y;
-    const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+function wheelDeltaPixels(ev) {
+    if (ev.deltaMode === 1) return ev.deltaY * 16;
+    if (ev.deltaMode === 2) return ev.deltaY * (cssH || 800);
+    return ev.deltaY;
+}
+
+function applyPendingWheelZoom() {
+    wheelZoomFrame = null;
+    const point = lastWheelPoint;
+    const delta = clamp(pendingWheelDelta, -180, 180);
+    pendingWheelDelta = 0;
+    if (!point || Math.abs(delta) < 0.01) return;
+
+    markViewInteraction();
     const oldZ = state.view.zoom;
+    const factor = Math.exp(-delta * 0.0011);
     const newZ = clamp(oldZ * factor, 0.2, 3);
     if (newZ === oldZ) return;
 
-    const anchor = screenToWorld(mx, my);
+    const anchor = screenToWorld(point.x, point.y);
     state.view.zoom = newZ;
-    state.view.x = mx - anchor.x * newZ;
-    state.view.y = my - anchor.y * newZ;
-    requestRedraw(); persistViewSoon();
+    state.view.x = point.x - anchor.x * newZ;
+    state.view.y = point.y - anchor.y * newZ;
+    requestRedraw();
+    persistViewSoon();
+}
+
+function onWheel(ev) {
+    ev.preventDefault();
+    lastWheelPoint = getCanvasPoint(ev);
+    pendingWheelDelta += wheelDeltaPixels(ev);
+    markViewInteraction();
+    if (!wheelZoomFrame) wheelZoomFrame = requestAnimationFrame(applyPendingWheelZoom);
 }
 
 function onPointerDown(ev) {
@@ -1284,12 +1351,6 @@ function onPointerDown(ev) {
     if (ev.button === 1) { ix.mode = 'pan'; return; }
 
     // önce + butonu
-    const addOn = addBtnAtScreen(sx, sy);
-    if (addOn) {
-        addSatellite(addOn);
-        ix.mode = 'idle';
-        return;
-    }
     // sonra connect halkası
     const handleNode = handleAtScreen(sx, sy);
     if (handleNode) {
@@ -1364,17 +1425,14 @@ function onPointerMove(ev) {
     if (Math.abs(sx - ix.startX) + Math.abs(sy - ix.startY) > 3) ix.moved = true;
 
     if (ix.mode === 'idle') {
-        const addOn = addBtnAtScreen(sx, sy);
         const w = screenToWorld(sx, sy);
-        const n = addOn || nodeAtWorld(w.x, w.y);
-        const newAdd = addOn ? addOn.id : null;
+        const n = nodeAtWorld(w.x, w.y);
         const newHover = n ? n.id : null;
         let cursor = 'default';
-        if (addOn) cursor = 'pointer';
-        else if (n) cursor = (ev.shiftKey ? 'crosshair' : 'grab');
+        if (n) cursor = (ev.shiftKey ? 'crosshair' : 'grab');
         if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
-        if (state.hovered !== newHover || state.hoveredAddBtn !== newAdd) {
-            state.hovered = newHover; state.hoveredAddBtn = newAdd;
+        if (state.hovered !== newHover) {
+            state.hovered = newHover;
             requestRedraw();
         }
         return;
@@ -1396,6 +1454,7 @@ function onPointerMove(ev) {
             pendingPanDy = 0;
             state.view.x += panDx;
             state.view.y += panDy;
+            if (panDx || panDy) markViewInteraction();
         }
         if (ix.mode === 'drag' && ix.dragOffsets) {
             const w = screenToWorld(ix.lastX, ix.lastY);
@@ -1441,10 +1500,22 @@ function onPointerUp(ev) {
         if (pendingPanDx || pendingPanDy) {
             state.view.x += pendingPanDx;
             state.view.y += pendingPanDy;
+            markViewInteraction();
             pendingPanDx = 0;
             pendingPanDy = 0;
         }
         if (ix.moved) persist();
+    }
+
+    if (ix.mode === 'pan' && !ix.moved && ev.pointerType === 'touch') {
+        const w = screenToWorld(sx, sy);
+        if (!nodeAtWorld(w.x, w.y) && isDoubleTap('canvas-empty', ev.clientX, ev.clientY)) {
+            addNode({
+                type: 'sub', title: 'Yeni not',
+                hybridKey: hybrids[0].key,
+                cx: w.x, cy: w.y,
+            });
+        }
     }
 
     if (ix.mode === 'connect' && ix.connectFrom) {
@@ -1465,9 +1536,21 @@ function onPointerUp(ev) {
         updateMobileActions();
     }
 
-    // Tek tık (hareketsiz) → çocuğu olan düğümlerde expand toggle
+    // Tek tik (hareketsiz) -> cocugu olan dugumlerde expand toggle
     if (ix.mode === 'drag' && !ix.moved && ix.pressNodeId) {
         const n = state.nodes.find(x => x.id === ix.pressNodeId);
+        if (n && ev.pointerType === 'touch' && isDoubleTap(`node-add:${n.id}`, ev.clientX, ev.clientY)) {
+            addSatellite(n);
+            updateMobileActions();
+            ix.mode = 'idle';
+            ix.connectFrom = null;
+            ix.marqueeRect = null;
+            ix.dragOffsets = null;
+            ix.pressNodeId = null;
+            ix.moved = false;
+            requestRedraw();
+            return;
+        }
         if (n && !isMobileInteractionMode()) {
             const hasChildren = state.nodes.some(x => x.parentId === n.id);
             if (hasChildren) n.expanded = !n.expanded;
@@ -1490,7 +1573,7 @@ function onDblClick(ev) {
     const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
     const w = screenToWorld(sx, sy);
     const n = nodeAtWorld(w.x, w.y);
-    if (n) openInspector(n);
+    if (n) addSatellite(n);
     else {
         // boş alana çift tık → serbest düğüm ekle
         addNode({
@@ -1643,20 +1726,42 @@ function renderPalette() {
         el.innerHTML = `
             <span class="cm-pal-orb" style="background: radial-gradient(circle at 30% 30%, ${lighten(h.color, 0.4)}, ${h.color} 60%, ${darken(h.color, 0.4)});"></span>
             <span class="cm-pal-title">${h.title}</span>
-            <span class="cm-pal-add" title="Haritaya ekle"><i class="fas fa-plus"></i></span>
+            <span class="cm-pal-add" title="Cift tikla veya cift dokun"><i class="fas fa-plus"></i></span>
         `;
         el.addEventListener('dragstart', (ev) => {
             ev.dataTransfer.setData('text/cm-hybrid', h.key);
             ev.dataTransfer.effectAllowed = 'copy';
         });
-        el.addEventListener('dblclick', () => spawnHybridAtCenter(h.key));
-        el.addEventListener('click', (e) => {
-            if (!isMobileInteractionMode() || e.target.closest('.cm-pal-add')) return;
+        el.addEventListener('dblclick', (e) => {
+            e.preventDefault();
             spawnHybridAtCenter(h.key);
         });
-        el.querySelector('.cm-pal-add').onclick = (e) => {
-            e.stopPropagation(); spawnHybridAtCenter(h.key);
-        };
+        el.addEventListener('pointerup', (e) => {
+            if (e.pointerType !== 'touch' || e.target.closest('.cm-pal-add')) return;
+            if (isDoubleTap(`palette:${h.key}`, e.clientX, e.clientY)) {
+                e.preventDefault();
+                spawnHybridAtCenter(h.key);
+            }
+        });
+        el.addEventListener('click', (e) => e.preventDefault());
+        const addIcon = el.querySelector('.cm-pal-add');
+        addIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+        });
+        addIcon.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            spawnHybridAtCenter(h.key);
+        });
+        addIcon.addEventListener('pointerup', (e) => {
+            if (e.pointerType !== 'touch') return;
+            e.stopPropagation();
+            if (isDoubleTap(`palette-add:${h.key}`, e.clientX, e.clientY)) {
+                e.preventDefault();
+                spawnHybridAtCenter(h.key);
+            }
+        });
         paletteList.appendChild(el);
     }
 }
@@ -1786,6 +1891,7 @@ function zoomBy(factor) {
     state.view.x = cx - (cx - state.view.x) * (newZ / oldZ);
     state.view.y = cy - (cy - state.view.y) * (newZ / oldZ);
     state.view.zoom = newZ;
+    markViewInteraction();
     requestRedraw(); persist();
 }
 

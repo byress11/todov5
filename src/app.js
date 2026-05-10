@@ -130,6 +130,15 @@ window.addEventListener('unhandledrejection', (event) => {
     console.error('Unhandled promise rejection:', event.reason);
 });
 
+// Yakalanmamis JS hatalarini yakala (kaynak/satir bilgisi ile)
+window.addEventListener('error', (event) => {
+    console.error('[Window error]',
+        event.message,
+        '@', event.filename + ':' + event.lineno + ':' + event.colno,
+        event.error
+    );
+});
+
 // Log app info
 console.log('%cTaskMaster Pro', 'font-size: 24px; font-weight: bold; color: #6366f1;');
 console.log('%cVersion: 1.0.0', 'font-size: 12px; color: #888;');

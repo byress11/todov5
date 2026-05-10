@@ -8,6 +8,178 @@ let tabs = [];
 let activeTabId = null;
 let tabIdCounter = 0;
 let resizeObserver = null;
+let ipcListenersInitialized = false;
+
+// ==================== YER İMLERİ ====================
+const BOOKMARKS_STORAGE_KEY = 'taskmaster_browser_bookmarks_v1';
+const BOOKMARKS_BAR_STATE_KEY = 'taskmaster_browser_bookmarks_visible_v1';
+let bookmarks = [];
+let bookmarksBarVisible = true;
+
+function loadBookmarks() {
+    try {
+        const raw = localStorage.getItem(BOOKMARKS_STORAGE_KEY);
+        bookmarks = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(bookmarks)) bookmarks = [];
+    } catch {
+        bookmarks = [];
+    }
+    try {
+        const visState = localStorage.getItem(BOOKMARKS_BAR_STATE_KEY);
+        bookmarksBarVisible = visState === null ? true : visState === '1';
+    } catch {
+        bookmarksBarVisible = true;
+    }
+}
+
+function saveBookmarks() {
+    try {
+        localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks));
+    } catch (err) {
+        console.error('Yer imleri kaydedilemedi:', err);
+    }
+}
+
+function isBookmarked(url) {
+    if (!url) return false;
+    return bookmarks.some(b => b.url === url);
+}
+
+function addBookmark(url, title, favicon) {
+    if (!url || isBookmarked(url)) return false;
+    bookmarks.unshift({
+        id: `bm_${Date.now()}`,
+        url,
+        title: title || getDomain(url),
+        favicon: favicon || null,
+        createdAt: Date.now()
+    });
+    saveBookmarks();
+    renderBookmarks();
+    updateBookmarkButton();
+    return true;
+}
+
+function removeBookmark(url) {
+    const before = bookmarks.length;
+    bookmarks = bookmarks.filter(b => b.url !== url);
+    if (bookmarks.length !== before) {
+        saveBookmarks();
+        renderBookmarks();
+        updateBookmarkButton();
+        return true;
+    }
+    return false;
+}
+
+function toggleBookmarkForActiveTab() {
+    if (!activeTabId) {
+        showToast('Önce bir sayfa açın.', 'error');
+        return;
+    }
+    const tab = tabs.find(t => t.id === activeTabId);
+    if (!tab) return;
+    if (isBookmarked(tab.url)) {
+        removeBookmark(tab.url);
+        showToast('Yer imi kaldırıldı.', 'info');
+    } else {
+        addBookmark(tab.url, tab.title, tab.favicon);
+        showToast('Yer imlerine eklendi.', 'success');
+    }
+}
+
+function renderBookmarks() {
+    const list = document.getElementById('browserBookmarksList');
+    const empty = document.getElementById('browserBookmarksEmpty');
+    const bar = document.getElementById('browserBookmarksBar');
+    if (!list || !bar) return;
+
+    bar.style.display = bookmarksBarVisible ? '' : 'none';
+
+    list.querySelectorAll('.browser-bookmark-item').forEach(el => el.remove());
+
+    if (!bookmarks.length) {
+        if (empty) empty.style.display = '';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    bookmarks.forEach(bm => {
+        const item = document.createElement('div');
+        item.className = 'browser-bookmark-item';
+        item.title = `${bm.title}\n${bm.url}\n(Sağ tık: kaldır)`;
+        item.innerHTML = `
+            <span class="browser-bookmark-favicon">
+                ${bm.favicon ? `<img src="${bm.favicon}" alt="">` : '<i class="fas fa-globe"></i>'}
+            </span>
+            <span class="browser-bookmark-title"></span>
+            <span class="browser-bookmark-remove" title="Kaldır"><i class="fas fa-times"></i></span>
+        `;
+        item.querySelector('.browser-bookmark-title').textContent = bm.title || getDomain(bm.url);
+
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('.browser-bookmark-remove')) return;
+            if (!activeTabId) {
+                createTab(bm.url);
+            } else {
+                navigateTo(bm.url);
+            }
+        });
+        item.querySelector('.browser-bookmark-remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeBookmark(bm.url);
+        });
+        item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            removeBookmark(bm.url);
+        });
+
+        list.appendChild(item);
+    });
+}
+
+function updateBookmarkButton() {
+    const btn = document.getElementById('browserBookmarkBtn');
+    if (!btn) return;
+    const tab = tabs.find(t => t.id === activeTabId);
+    const active = tab && isBookmarked(tab.url);
+    btn.classList.toggle('active', !!active);
+    const icon = btn.querySelector('i');
+    if (icon) {
+        icon.className = active ? 'fas fa-star' : 'far fa-star';
+    }
+    btn.title = active ? 'Yer İminden Kaldır' : 'Yer İmlerine Ekle';
+}
+
+function toggleBookmarksBar() {
+    bookmarksBarVisible = !bookmarksBarVisible;
+    try {
+        localStorage.setItem(BOOKMARKS_BAR_STATE_KEY, bookmarksBarVisible ? '1' : '0');
+    } catch {}
+    renderBookmarks();
+}
+
+// ==================== GEÇMİŞ TEMİZLEME ====================
+async function clearBrowsingHistory() {
+    const confirmed = window.confirm(
+        'Tarayıcı geçmişi, çerezler, önbellek ve oturum bilgileri silinecek.\n\nDevam etmek istiyor musunuz?'
+    );
+    if (!confirmed) return;
+
+    try {
+        if (window.electronAPI?.browserClearHistory) {
+            const result = await window.electronAPI.browserClearHistory();
+            if (result && result.success) {
+                showToast('Geçmiş başarıyla temizlendi.', 'success');
+            } else {
+                showToast('Geçmiş temizlenirken bir hata oluştu.', 'error');
+            }
+        }
+    } catch (err) {
+        console.error('Geçmiş temizleme hatası:', err);
+        showToast('Geçmiş temizlenemedi.', 'error');
+    }
+}
 
 function generateTabId() {
     return `tab_${++tabIdCounter}_${Date.now()}`;
@@ -16,7 +188,19 @@ function generateTabId() {
 function getBrowserBounds() {
     const container = document.getElementById('browserContainer');
     if (!container) return null;
+    
+    // Tarayıcı gizliyse bounds hesaplama (sıfır boyut hatasını önler)
+    if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+        return null;
+    }
+    
     const rect = container.getBoundingClientRect();
+    
+    // 0x0 boyutlarını main processe gönderme
+    if (rect.width === 0 || rect.height === 0) {
+        return null;
+    }
+    
     return {
         x: Math.round(rect.left),
         y: Math.round(rect.top),
@@ -175,6 +359,7 @@ async function switchToTab(tabId) {
 
     await window.electronAPI.switchBrowserTab({ tabId, bounds });
     updateUrlBar(tab.url);
+    updateBookmarkButton();
 
     // Aktif sekme stilini guncelle
     document.querySelectorAll('.browser-tab').forEach(el => {
@@ -304,9 +489,7 @@ function hideBrowser() {
     if (window.electronAPI?.hideAllBrowserTabs) {
         window.electronAPI.hideAllBrowserTabs();
     }
-    if (window.electronAPI?.hideBrowserView) {
-        window.electronAPI.hideBrowserView();
-    }
+    // Eski single-tab API'si artik kullanilmiyor; cagrildiysa sessizce yut.
 }
 
 // Tarayiciyi goster
@@ -319,6 +502,11 @@ function showBrowser() {
     }
 }
 
+function isBrowserTabSelected() {
+    const activeNavBtn = document.querySelector('.nav-btn.active');
+    return activeNavBtn?.dataset.tab === 'browser';
+}
+
 // Tab URL degistiginde
 function onTabUrlChanged(tabId, url) {
     const tab = tabs.find(t => t.id === tabId);
@@ -326,6 +514,7 @@ function onTabUrlChanged(tabId, url) {
         tab.url = url;
         if (tabId === activeTabId) {
             updateUrlBar(url);
+            updateBookmarkButton();
         }
     }
 }
@@ -336,6 +525,13 @@ function onTabTitleChanged(tabId, title) {
     if (tab) {
         tab.title = title || getDomain(tab.url);
         renderTabs();
+        // Yer imindeki başlığı da güncelle
+        const bm = bookmarks.find(b => b.url === tab.url);
+        if (bm && bm.title !== tab.title) {
+            bm.title = tab.title;
+            saveBookmarks();
+            renderBookmarks();
+        }
     }
 }
 
@@ -345,11 +541,20 @@ function onTabFaviconChanged(tabId, favicon) {
     if (tab) {
         tab.favicon = favicon;
         renderTabs();
+        const bm = bookmarks.find(b => b.url === tab.url);
+        if (bm && bm.favicon !== favicon) {
+            bm.favicon = favicon;
+            saveBookmarks();
+            renderBookmarks();
+        }
     }
 }
 
 export function initializeBrowser() {
     console.log('Browser baslatiliyor...');
+    loadBookmarks();
+    renderBookmarks();
+    updateBookmarkButton();
 
     // Browser tab'ina tiklandiginda
     const browserNavBtn = document.querySelector('.nav-btn[data-tab="browser"]');
@@ -384,6 +589,16 @@ export function initializeBrowser() {
     if (!activeNavBtn || activeNavBtn.dataset.tab !== 'browser') {
         hideBrowser();
     }
+
+    document.addEventListener('taskmaster:settings-opened', () => {
+        hideBrowser();
+    });
+
+    document.addEventListener('taskmaster:settings-closed', () => {
+        if (isBrowserTabSelected()) {
+            showBrowser();
+        }
+    });
 
     // Yeni sekme butonu
     const newTabBtn = document.getElementById('browserNewTabBtn');
@@ -436,42 +651,63 @@ export function initializeBrowser() {
     // Zoom butonlari
     if (zoomInBtn) zoomInBtn.addEventListener('click', zoomIn);
     if (zoomOutBtn) zoomOutBtn.addEventListener('click', zoomOut);
+
+    // Yer imleri butonlari
+    const bookmarkBtn = document.getElementById('browserBookmarkBtn');
+    const bookmarksToggleBtn = document.getElementById('browserBookmarksToggleBtn');
+    const clearHistoryBtn = document.getElementById('browserClearHistoryBtn');
+    if (bookmarkBtn) bookmarkBtn.addEventListener('click', toggleBookmarkForActiveTab);
+    if (bookmarksToggleBtn) bookmarksToggleBtn.addEventListener('click', toggleBookmarksBar);
+    if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', clearBrowsingHistory);
     if (zoomLevelSpan) {
         zoomLevelSpan.addEventListener('dblclick', zoomReset);
         zoomLevelSpan.style.cursor = 'pointer';
         zoomLevelSpan.title = 'Cift tikla: %100\'e sifirla';
     }
 
-    // Tab degisikliklerini dinle
-    if (window.electronAPI?.onBrowserTabUrlChanged) {
-        window.electronAPI.onBrowserTabUrlChanged((event, data) => {
-            onTabUrlChanged(data.tabId, data.url);
-        });
-    }
+    // Tab degisikliklerini dinle (sadece bir kere kayit et)
+    if (!ipcListenersInitialized) {
+        if (window.electronAPI?.onBrowserTabUrlChanged) {
+            window.electronAPI.onBrowserTabUrlChanged((event, data) => {
+                onTabUrlChanged(data.tabId, data.url);
+            });
+        }
 
-    if (window.electronAPI?.onBrowserTabTitleChanged) {
-        window.electronAPI.onBrowserTabTitleChanged((event, data) => {
-            onTabTitleChanged(data.tabId, data.title);
-        });
-    }
+        if (window.electronAPI?.onBrowserTabTitleChanged) {
+            window.electronAPI.onBrowserTabTitleChanged((event, data) => {
+                onTabTitleChanged(data.tabId, data.title);
+            });
+        }
 
-    if (window.electronAPI?.onBrowserTabFaviconChanged) {
-        window.electronAPI.onBrowserTabFaviconChanged((event, data) => {
-            onTabFaviconChanged(data.tabId, data.favicon);
-        });
+        if (window.electronAPI?.onBrowserTabFaviconChanged) {
+            window.electronAPI.onBrowserTabFaviconChanged((event, data) => {
+                onTabFaviconChanged(data.tabId, data.favicon);
+            });
+        }
+
+        // Sayfa icindeki popup/yeni-pencere isteklerini yeni sekmede ac
+        if (window.electronAPI?.onBrowserOpenNewTab) {
+            window.electronAPI.onBrowserOpenNewTab((event, data) => {
+                if (data && data.url) {
+                    createTab(data.url);
+                }
+            });
+        }
+
+        // Bildirim listener'i
+        if (window.electronAPI?.onShowNotification) {
+            window.electronAPI.onShowNotification((event, data) => {
+                showToast(data.message, data.type || 'info');
+            });
+        }
+        
+        ipcListenersInitialized = true;
     }
 
     // Ilk acilista browser sekmesi aktifse ana sayfayi ac
     if (browserNavBtn && browserNavBtn.classList.contains('active')) {
         console.log('Browser tab is active on startup - opening homepage');
         createTab(HOME_URL);
-    }
-
-    // Bildirim listener'i
-    if (window.electronAPI?.onShowNotification) {
-        window.electronAPI.onShowNotification((event, data) => {
-            showToast(data.message, data.type || 'info');
-        });
     }
 
     console.log('Browser initialized with multi-tab support');

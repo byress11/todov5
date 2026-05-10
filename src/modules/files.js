@@ -28,7 +28,7 @@ async function syncSystemClipboard(filePath, action) {
         const result = await window.electronAPI.setFileClipboard(filePath, action);
         if (!result?.success) {
             console.warn('System clipboard update failed:', result?.error);
-            showToast('Sistem panosu gÃ¼ncellenemedi');
+            showToast('Sistem panosu güncellenemedi');
             return;
         }
         if (result?.fallback) {
@@ -36,11 +36,11 @@ async function syncSystemClipboard(filePath, action) {
         }
         if (result?.formats && !result.formats.includes('CF_HDROP')) {
             console.warn('System clipboard missing CF_HDROP:', result.formats);
-            showToast('Sistem panosu formatÄ± eksik');
+            showToast('Sistem panosu formatı eksik');
         }
     } catch (error) {
         console.warn('System clipboard update failed:', error);
-        showToast('Sistem panosu gÃ¼ncellenemedi');
+        showToast('Sistem panosu güncellenemedi');
     }
 }
 
